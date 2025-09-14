@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box,
-  Typography,
   Chip,
   Tooltip
 } from '@mui/material';
@@ -33,7 +32,7 @@ const EnhancedTodayChip: React.FC<EnhancedTodayChipProps> = ({
   const [modalOpen, setModalOpen] = useState(false);
   const [shouldShake, setShouldShake] = useState(false);
   const [userManuallyClosed, setUserManuallyClosed] = useState(false);
-  const { workflowProgress, navigationState, currentWorkflow } = useWorkflowStore();
+  const { currentWorkflow } = useWorkflowStore();
 
   // Prefer live workflow tasks (to reflect updated statuses), fallback to props
   const liveTasks = currentWorkflow?.tasks && Array.isArray(currentWorkflow.tasks) && currentWorkflow.tasks.length > 0

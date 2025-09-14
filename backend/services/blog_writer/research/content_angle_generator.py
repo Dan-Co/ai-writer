@@ -67,13 +67,15 @@ class ContentAngleGenerator:
             prompt=angles_prompt,
             schema=angles_schema,
             temperature=0.7,
-            max_tokens=800
+            max_tokens=4000
         )
         
         if isinstance(angles_result, dict) and 'content_angles' in angles_result:
+            logger.info("✅ AI content angles generation completed successfully")
             return angles_result['content_angles'][:7]
         else:
             # Fail gracefully - no fallback data
-            logger.error(f"AI content angles generation failed: {angles_result}")
-            raise ValueError(f"Content angles generation failed: {angles_result.get('error', 'Unknown error')}")
+            error_msg = angles_result.get('error', 'Unknown error') if isinstance(angles_result, dict) else str(angles_result)
+            logger.error(f"AI content angles generation failed: {error_msg}")
+            raise ValueError(f"Content angles generation failed: {error_msg}")
     

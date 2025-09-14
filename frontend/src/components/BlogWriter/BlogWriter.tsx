@@ -4,6 +4,7 @@ import { useCopilotAction } from '@copilotkit/react-core';
 import '@copilotkit/react-ui/styles.css';
 import { blogWriterApi, BlogOutlineSection, BlogResearchResponse, BlogSEOMetadataResponse, BlogSEOAnalyzeResponse } from '../../services/blogWriterApi';
 import EnhancedOutlineEditor from './EnhancedOutlineEditor';
+import ContinuityBadge from './ContinuityBadge';
 import TitleSelector from './TitleSelector';
 import DiffPreview from './DiffPreview';
 import SEOMiniPanel from './SEOMiniPanel';
@@ -23,8 +24,10 @@ export const BlogWriter: React.FC = () => {
   const [selectedTitle, setSelectedTitle] = useState<string>('');
   const [sections, setSections] = useState<Record<string, string>>({});
   const [seoAnalysis, setSeoAnalysis] = useState<BlogSEOAnalyzeResponse | null>(null);
+  const [genMode, setGenMode] = useState<'draft' | 'polished'>('polished');
   const [seoMetadata, setSeoMetadata] = useState<BlogSEOMetadataResponse | null>(null);
   const [hallucinationResult, setHallucinationResult] = useState<any>(null);
+  const [continuityRefresh, setContinuityRefresh] = useState<number>(0);
 
   const buildFullMarkdown = () => {
     if (!outline.length) return '';
@@ -217,9 +220,10 @@ export const BlogWriter: React.FC = () => {
       if (!section) return { success: false, message: 'Section not found. Please generate an outline first.' };
       
       try {
-        const res = await blogWriterApi.generateSection({ section });
+        const res = await blogWriterApi.generateSection({ section, mode: genMode });
         if (res?.markdown) {
           setSections(prev => ({ ...prev, [sectionId]: res.markdown }));
+          setContinuityRefresh(Date.now());
           
           return { 
             success: true, 
@@ -287,8 +291,9 @@ export const BlogWriter: React.FC = () => {
     parameters: [],
     handler: async () => {
       for (const s of outline) {
-        const res = await blogWriterApi.generateSection({ section: s });
+        const res = await blogWriterApi.generateSection({ section: s, mode: genMode });
         setSections(prev => ({ ...prev, [s.id]: res.markdown }));
+        setContinuityRefresh(Date.now());
       }
       return { success: true };
     },
@@ -547,9 +552,24 @@ export const BlogWriter: React.FC = () => {
                 onRefine={(op, id, payload) => blogWriterApi.refineOutline({ outline, operation: op, section_id: id, payload }).then(res => setOutline(res.outline))} 
               />
 
+              {/* Draft/Polished Mode Toggle */}
+              <div style={{ margin: '12px 0' }}>
+                <label style={{ marginRight: 8 }}>Generation mode:</label>
+                <select value={genMode} onChange={(e) => setGenMode(e.target.value as 'draft' | 'polished')}>
+                  <option value="draft">Draft (faster, lower cost)</option>
+                  <option value="polished">Polished (higher quality)</option>
+                </select>
+              </div>
+
               {outline.map(s => (
                 <div key={s.id} style={{ marginBottom: 16 }}>
-                  <h4>{s.heading}</h4>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <h4 style={{ margin: 0 }}>{s.heading}</h4>
+                    {/* Continuity badge */}
+                    {sections[s.id] && (
+                      <ContinuityBadge sectionId={s.id} refreshToken={continuityRefresh} />
+                    )}
+                  </div>
                   {sections[s.id] ? (
                     <>
                       <pre style={{ whiteSpace: 'pre-wrap' }}>{sections[s.id]}</pre>

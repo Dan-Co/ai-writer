@@ -22,6 +22,7 @@ from services.linkedin.content_generator_prompts import (
     VideoScriptGenerator
 )
 from services.persona_analysis_service import PersonaAnalysisService
+import time
 
 
 class ContentGenerator:
@@ -33,9 +34,76 @@ class ContentGenerator:
         self.gemini_grounded = gemini_grounded
         self.fallback_provider = fallback_provider
         
+        # Persona caching
+        self._persona_cache: Dict[str, Dict[str, Any]] = {}
+        self._cache_timestamps: Dict[str, float] = {}
+        self._cache_duration = 300  # 5 minutes cache duration
+        
         # Initialize specialized generators
         self.carousel_generator = CarouselGenerator(citation_manager, quality_analyzer)
         self.video_script_generator = VideoScriptGenerator(citation_manager, quality_analyzer)
+    
+    def _get_cached_persona_data(self, user_id: int, platform: str) -> Optional[Dict[str, Any]]:
+        """
+        Get persona data with caching for LinkedIn platform.
+        
+        Args:
+            user_id: User ID to get persona for
+            platform: Platform type (linkedin)
+            
+        Returns:
+            Persona data or None if not available
+        """
+        cache_key = f"{platform}_persona_{user_id}"
+        current_time = time.time()
+        
+        # Check cache first
+        if cache_key in self._persona_cache and cache_key in self._cache_timestamps:
+            cache_age = current_time - self._cache_timestamps[cache_key]
+            if cache_age < self._cache_duration:
+                logger.debug(f"Using cached persona data for user {user_id} (age: {cache_age:.1f}s)")
+                return self._persona_cache[cache_key]
+            else:
+                # Cache expired, remove it
+                logger.debug(f"Cache expired for user {user_id}, refreshing...")
+                del self._persona_cache[cache_key]
+                del self._cache_timestamps[cache_key]
+        
+        # Fetch fresh data
+        try:
+            persona_service = PersonaAnalysisService()
+            persona_data = persona_service.get_persona_for_platform(user_id, platform)
+            
+            # Cache the result
+            if persona_data:
+                self._persona_cache[cache_key] = persona_data
+                self._cache_timestamps[cache_key] = current_time
+                logger.debug(f"Cached persona data for user {user_id}")
+            
+            return persona_data
+            
+        except Exception as e:
+            logger.warning(f"Could not load persona data for {platform} content generation: {e}")
+            return None
+    
+    def _clear_persona_cache(self, user_id: int = None):
+        """
+        Clear persona cache for a specific user or all users.
+        
+        Args:
+            user_id: User ID to clear cache for, or None to clear all
+        """
+        if user_id is None:
+            self._persona_cache.clear()
+            self._cache_timestamps.clear()
+            logger.info("Cleared all persona cache")
+        else:
+            # Clear cache for all platforms for this user
+            keys_to_remove = [key for key in self._persona_cache.keys() if key.endswith(f"_{user_id}")]
+            for key in keys_to_remove:
+                del self._persona_cache[key]
+                del self._cache_timestamps[key]
+            logger.info(f"Cleared persona cache for user {user_id}")
     
     def _transform_gemini_sources(self, gemini_sources):
         """Transform Gemini sources to ResearchSource format."""
@@ -342,8 +410,9 @@ class ContentGenerator:
                 raise Exception("Gemini Grounded Provider not available - cannot generate content without AI provider")
                 
             # Build the prompt for grounded generation using persona if available (DB vs session override)
-            persona_service = PersonaAnalysisService()
-            persona_data = persona_service.get_persona_for_platform(user_id=getattr(request, 'user_id', 1), platform='linkedin') if hasattr(request, 'user_id') else None
+            # Beta testing: Force user_id=1 for all requests
+            user_id = 1
+            persona_data = self._get_cached_persona_data(user_id, 'linkedin')
             if getattr(request, 'persona_override', None):
                 try:
                     # Merge shallowly: override core and platform adaptation parts
@@ -416,8 +485,9 @@ class ContentGenerator:
                 raise Exception("Gemini Grounded Provider not available - cannot generate content without AI provider")
                 
             # Build the prompt for grounded generation using persona if available (DB vs session override)
-            persona_service = PersonaAnalysisService()
-            persona_data = persona_service.get_persona_for_platform(user_id=getattr(request, 'user_id', 1), platform='linkedin') if hasattr(request, 'user_id') else None
+            # Beta testing: Force user_id=1 for all requests
+            user_id = 1
+            persona_data = self._get_cached_persona_data(user_id, 'linkedin')
             if getattr(request, 'persona_override', None):
                 try:
                     override = request.persona_override

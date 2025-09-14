@@ -56,6 +56,7 @@ export interface BlogSectionResponse {
   success: boolean;
   markdown: string;
   citations: ResearchSource[];
+  continuity_metrics?: { flow?: number; consistency?: number; progression?: number };
 }
 
 export interface BlogSEOAnalyzeResponse {
@@ -92,6 +93,11 @@ export const blogWriterApi = {
     return data;
   },
 
+  async getContinuity(sectionId: string): Promise<{ section_id: string; continuity_metrics?: Record<string, number> }> {
+    const { data } = await apiClient.get(`/api/blog/section/${encodeURIComponent(sectionId)}/continuity`);
+    return data;
+  },
+
   async generateOutline(payload: { research: BlogResearchResponse; persona?: PersonaInfo; word_count?: number; custom_instructions?: string }): Promise<BlogOutlineResponse> {
     // Use the direct outline generation endpoint
     const { data } = await apiClient.post("/api/blog/outline/generate", payload);
@@ -103,7 +109,7 @@ export const blogWriterApi = {
     return data;
   },
 
-  async generateSection(payload: { section: BlogOutlineSection; keywords?: string[]; tone?: string; persona?: PersonaInfo }): Promise<BlogSectionResponse> {
+  async generateSection(payload: { section: BlogOutlineSection; keywords?: string[]; tone?: string; persona?: PersonaInfo; mode?: 'draft' | 'polished' }): Promise<BlogSectionResponse> {
     const { data } = await apiClient.post("/api/blog/section/generate", payload);
     return data;
   },

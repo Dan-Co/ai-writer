@@ -2,11 +2,9 @@ import React, { useState } from 'react';
 import {
   Box,
   Container,
-  Grid,
   Alert,
   Snackbar,
-  useTheme,
-  useMediaQuery
+  useTheme
 } from '@mui/material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -15,12 +13,8 @@ import AskAlwrityIcon from '../../assets/images/AskAlwrity-min.ico';
 // Shared components
 import DashboardHeader from '../shared/DashboardHeader';
 import SystemStatusIndicator from '../ContentPlanningDashboard/components/SystemStatusIndicator';
-import SearchFilter from '../shared/SearchFilter';
-import ToolCard from '../shared/ToolCard';
-import CategoryHeader from '../shared/CategoryHeader';
 import LoadingSkeleton from '../shared/LoadingSkeleton';
 import ErrorDisplay from '../shared/ErrorDisplay';
-import EmptyState from '../shared/EmptyState';
 import ContentLifecyclePillars from './ContentLifecyclePillars';
 import AnalyticsInsights from './components/AnalyticsInsights';
 import ToolsModal from './components/ToolsModal';
@@ -61,7 +55,6 @@ const MainDashboard: React.FC = () => {
     setSelectedSubCategory,
     showSnackbar,
     hideSnackbar,
-    clearFilters,
   } = useDashboardStore();
 
   // Workflow store hooks
@@ -219,7 +212,7 @@ const MainDashboard: React.FC = () => {
       // Close modal if search query is too short
       setToolsModalOpen(false);
     }
-  }, [searchQuery, toolCategories]);
+  }, [searchQuery]);
 
   // Close modal and clear search
   const handleCloseModal = () => {
@@ -232,11 +225,7 @@ const MainDashboard: React.FC = () => {
     }
   };
 
-  const filteredCategories = getFilteredCategories(
-    toolCategories,
-    selectedCategory,
-    searchQuery
-  );
+  // Note: filteredCategories removed as it's not used in the current implementation
 
   if (loading) {
     return <LoadingSkeleton />;
@@ -334,6 +323,8 @@ const MainDashboard: React.FC = () => {
                   collapsed={sidebarCollapsed}
                   onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
                   theme={theme}
+                  favorites={favorites}
+                  onToolClick={handleToolClick}
                 />
               </Box>
 

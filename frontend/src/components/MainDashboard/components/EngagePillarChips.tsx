@@ -23,7 +23,6 @@ const EngagePillarChips: React.FC<EngagePillarChipsProps> = ({
   isHovered, 
   pillarColor 
 }) => {
-  const theme = useTheme();
   const navigate = useNavigate();
 
   // Today's tasks for Engage pillar

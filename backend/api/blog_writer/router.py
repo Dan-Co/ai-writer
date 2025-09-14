@@ -317,6 +317,22 @@ async def generate_section(request: BlogSectionRequest) -> BlogSectionResponse:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/section/{section_id}/continuity")
+async def get_section_continuity(section_id: str) -> Dict[str, Any]:
+    """Fetch last computed continuity metrics for a section (if available)."""
+    try:
+        # Access the in-memory continuity from the generator
+        gen = service.content_generator
+        # Find the last stored summary for the given section id
+        # For now, expose the most recent metrics if the section was just generated
+        # We keep a small in-memory snapshot on the generator object
+        continuity: Dict[str, Any] = getattr(gen, "_last_continuity", {})
+        metrics = continuity.get(section_id)
+        return {"section_id": section_id, "continuity_metrics": metrics}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/section/optimize", response_model=BlogOptimizeResponse)
 async def optimize_section(request: BlogOptimizeRequest) -> BlogOptimizeResponse:
     try:

@@ -28,6 +28,7 @@ from models.blog_models import (
 
 from ..research import ResearchService
 from ..outline import OutlineService
+from ..content.enhanced_content_generator import EnhancedContentGenerator
 
 
 class BlogWriterService:
@@ -36,6 +37,7 @@ class BlogWriterService:
     def __init__(self):
         self.research_service = ResearchService()
         self.outline_service = OutlineService()
+        self.content_generator = EnhancedContentGenerator()
     
     # Research Methods
     async def research(self, request: BlogResearchRequest) -> BlogResearchResponse:
@@ -71,12 +73,37 @@ class BlogWriterService:
         """Rebalance word count distribution across sections."""
         return self.outline_service.rebalance_word_counts(outline, target_words)
     
-    # Content Generation Methods (TODO: Extract to content module)
+    # Content Generation Methods
     async def generate_section(self, request: BlogSectionRequest) -> BlogSectionResponse:
         """Generate section content from outline."""
-        # TODO: Move to content module
-        md = f"## {request.section.heading}\n\nThis section content will be generated here.\n"
-        return BlogSectionResponse(success=True, markdown=md, citations=request.section.references)
+        # Compose research-lite object with minimal continuity summary if available
+        research_ctx: Any = getattr(request, 'research', None)
+        try:
+            ai_result = await self.content_generator.generate_section(
+                section=request.section,
+                research=research_ctx,
+                mode=(request.mode or "polished"),
+            )
+            markdown = ai_result.get('content') or ai_result.get('markdown') or ''
+            citations = []
+            # Map basic citations from sources if present
+            for s in ai_result.get('sources', [])[:5]:
+                citations.append({
+                    "title": s.get('title') if isinstance(s, dict) else getattr(s, 'title', ''),
+                    "url": s.get('url') if isinstance(s, dict) else getattr(s, 'url', ''),
+                })
+            if not markdown:
+                markdown = f"## {request.section.heading}\n\n(Generated content was empty.)"
+            return BlogSectionResponse(
+                success=True,
+                markdown=markdown,
+                citations=citations,
+                continuity_metrics=ai_result.get('continuity_metrics')
+            )
+        except Exception as e:
+            logger.error(f"Section generation failed: {e}")
+            fallback = f"## {request.section.heading}\n\nThis section will cover: {', '.join(request.section.key_points)}."
+            return BlogSectionResponse(success=False, markdown=fallback, citations=[])
     
     async def optimize_section(self, request: BlogOptimizeRequest) -> BlogOptimizeResponse:
         """Optimize section content for readability and SEO."""

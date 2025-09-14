@@ -41,7 +41,7 @@ const WorkflowHeroSection: React.FC<WorkflowHeroSectionProps> = ({
           exit={{ opacity: 0, y: -20 }}
           transition={{ duration: 0.6, ease: "easeOut" }}
         >
-          {/* Backdrop Overlay - Only over pillars section */}
+          {/* Banner Overlay - Covers task workflow area with constrained width */}
           <Box
             sx={{
               position: 'absolute',
@@ -49,23 +49,27 @@ const WorkflowHeroSection: React.FC<WorkflowHeroSectionProps> = ({
               left: 0,
               right: 0,
               bottom: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.6)',
-              backdropFilter: 'blur(6px)',
               zIndex: 10,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               borderRadius: 2, // Match the parent container's border radius
+              px: 2, // Add horizontal padding to constrain width
             }}
           >
-            {/* Hero Content */}
+            {/* Hero Content - Full Coverage */}
             <Box
               sx={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
                 textAlign: 'center',
-                maxWidth: isMobile ? '90%' : '500px',
                 px: 3,
                 py: 4,
-                background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.036) 0%, rgba(255,255,255,0.018) 100%)',
                 backdropFilter: 'blur(20px)',
                 borderRadius: 3,
                 border: '1px solid rgba(255,255,255,0.2)',
@@ -127,8 +131,29 @@ const WorkflowHeroSection: React.FC<WorkflowHeroSectionProps> = ({
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.8, delay: 0.2 }}
               >
-                {/* Icon */}
-                <Box sx={{ mb: 2 }}>
+                {/* Main Heading with Rocket */}
+                <Box sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  gap: 2,
+                  mb: 2
+                }}>
+                  <Typography
+                    variant={isMobile ? "h5" : "h4"}
+                    sx={{
+                      fontWeight: 800,
+                      color: '#ffffff',
+                      textShadow: '0 4px 8px rgba(0,0,0,0.3)',
+                      background: 'linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%)',
+                      backgroundClip: 'text',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                    }}
+                  >
+                    Grow Your Business Now
+                  </Typography>
+                  
                   <motion.div
                     animate={{ 
                       rotate: [0, 5, -5, 0],
@@ -142,7 +167,7 @@ const WorkflowHeroSection: React.FC<WorkflowHeroSectionProps> = ({
                   >
                     <Rocket 
                       sx={{ 
-                        fontSize: isMobile ? 40 : 48,
+                        fontSize: isMobile ? 32 : 40,
                         color: '#FF6B35',
                         filter: 'drop-shadow(0 4px 8px rgba(255,107,53,0.3))'
                       }} 
@@ -150,38 +175,7 @@ const WorkflowHeroSection: React.FC<WorkflowHeroSectionProps> = ({
                   </motion.div>
                 </Box>
 
-                {/* Main Heading */}
-                <Typography
-                  variant={isMobile ? "h5" : "h4"}
-                  sx={{
-                    fontWeight: 800,
-                    color: '#ffffff',
-                    mb: 1.5,
-                    textShadow: '0 4px 8px rgba(0,0,0,0.3)',
-                    background: 'linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%)',
-                    backgroundClip: 'text',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                  }}
-                >
-                  Grow Your Business Now
-                </Typography>
-
                 {/* Supporting Text */}
-                <Typography
-                  variant={isMobile ? "body2" : "body1"}
-                  sx={{
-                    color: 'rgba(255,255,255,0.9)',
-                    mb: 3,
-                    lineHeight: 1.5,
-                    maxWidth: '400px',
-                    mx: 'auto',
-                    textShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                  }}
-                >
-                  Start your personalized content workflow and watch your digital marketing transform. 
-                  Our AI-powered system will guide you through every step of your content journey.
-                </Typography>
 
                 {/* CTA Button */}
                 <motion.div
@@ -251,7 +245,7 @@ const WorkflowHeroSection: React.FC<WorkflowHeroSectionProps> = ({
                       transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                     }}
                   >
-                    {isLoading ? 'Starting...' : '🚀 Start Your Journey'}
+                    {isLoading ? 'Starting...' : 'Start Today\'s Tasks'}
                   </Button>
                 </motion.div>
 

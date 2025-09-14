@@ -22,7 +22,6 @@ const AnalyzePillarChips: React.FC<AnalyzePillarChipsProps> = ({
   isHovered, 
   pillarColor 
 }) => {
-  const theme = useTheme();
   const navigate = useNavigate();
 
   // Today's tasks for Analyze pillar

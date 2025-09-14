@@ -66,13 +66,15 @@ class KeywordAnalyzer:
             prompt=keyword_prompt,
             schema=keyword_schema,
             temperature=0.3,
-            max_tokens=1000
+            max_tokens=4000
         )
         
         if isinstance(keyword_analysis, dict) and 'error' not in keyword_analysis:
+            logger.info("✅ AI keyword analysis completed successfully")
             return keyword_analysis
         else:
             # Fail gracefully - no fallback data
-            logger.error(f"AI keyword analysis failed: {keyword_analysis}")
-            raise ValueError(f"Keyword analysis failed: {keyword_analysis.get('error', 'Unknown error')}")
+            error_msg = keyword_analysis.get('error', 'Unknown error') if isinstance(keyword_analysis, dict) else str(keyword_analysis)
+            logger.error(f"AI keyword analysis failed: {error_msg}")
+            raise ValueError(f"Keyword analysis failed: {error_msg}")
     

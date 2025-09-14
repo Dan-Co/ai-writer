@@ -390,11 +390,19 @@ def gemini_structured_json_response(prompt, schema, temperature=0.7, top_p=0.9, 
         )
 
         # Check for parsed content first (primary method for structured output)
-        if hasattr(response, 'parsed') and response.parsed is not None:
-            logger.info("Using response.parsed for structured output")
-            return response.parsed
+        if hasattr(response, 'parsed'):
+            logger.info(f"Response has parsed attribute: {response.parsed is not None}")
+            if response.parsed is not None:
+                logger.info("Using response.parsed for structured output")
+                return response.parsed
+            else:
+                logger.warning("Response.parsed is None, falling back to text parsing")
+                # Debug: Check if there's any text content
+                if hasattr(response, 'text') and response.text:
+                    logger.info(f"Text response length: {len(response.text)}")
+                    logger.debug(f"Text response preview: {response.text[:200]}...")
         
-        # Check for text content as fallback
+        # Check for text content as fallback (only if no parsed content)
         if hasattr(response, 'text') and response.text:
             logger.info("No parsed content, trying to parse text response")
             try:

@@ -247,7 +247,51 @@ def setup_environment():
     # Set up billing and subscription system
     setup_billing_tables()
     
+    # Set up persona tables
+    if setup_persona_tables():
+        # Verify persona tables were created successfully
+        verify_persona_tables()
+    else:
+        print("⚠️  Warning: Persona tables setup failed, but continuing...")
+    
     print("✅ Environment setup complete")
+
+def setup_persona_tables():
+    """Set up persona database tables."""
+    print("🔧 Setting up persona tables...")
+    try:
+        from services.database import engine
+        from models.persona_models import Base as PersonaBase
+        
+        # Create persona tables
+        PersonaBase.metadata.create_all(bind=engine)
+        print("✅ Persona tables created successfully")
+        
+        # Verify tables were created
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+        
+        persona_tables = [
+            'writing_personas',
+            'platform_personas', 
+            'persona_analysis_results',
+            'persona_validation_results'
+        ]
+        
+        created_tables = [table for table in persona_tables if table in tables]
+        print(f"✅ Verified persona tables created: {created_tables}")
+        
+        if len(created_tables) != len(persona_tables):
+            missing = [table for table in persona_tables if table not in created_tables]
+            print(f"⚠️  Warning: Missing persona tables: {missing}")
+            return False
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error setting up persona tables: {e}")
+        return False
 
 def verify_persona_tables():
     """Verify that persona tables exist and are accessible."""

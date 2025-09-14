@@ -13,7 +13,6 @@ import {
   Divider
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { keyframes } from '@mui/system';
 import {
   CheckCircle as CheckIcon,
   WarningAmber as WarningIcon,
@@ -53,43 +52,64 @@ interface AnalyticsInsightsProps {
 }
 
 const ColumnCard = styled(Card)(({ theme }) => ({
-  background: 'linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.08) 100%)',
-  border: '1px solid rgba(255,255,255,0.16)',
-  backdropFilter: 'blur(18px)',
-  WebkitBackdropFilter: 'blur(18px)',
-  borderRadius: theme.spacing(2),
+  background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(30, 41, 59, 0.7) 100%)',
+  border: '1px solid rgba(148, 163, 184, 0.15)',
+  backdropFilter: 'blur(20px)',
+  WebkitBackdropFilter: 'blur(20px)',
+  borderRadius: theme.spacing(3),
   overflow: 'hidden',
-  boxShadow: '0 8px 20px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.22)',
-  transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+  boxShadow: '0 20px 40px -12px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05)',
+  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+  position: 'relative',
+  '&::before': {
+    content: '""',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.02) 0%, rgba(147, 51, 234, 0.01) 100%)',
+    zIndex: -1,
+  },
   '&:hover': {
-    transform: 'translateY(-3px)',
-    boxShadow: '0 12px 28px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.28)'
+    transform: 'translateY(-4px)',
+    boxShadow: '0 32px 64px -12px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.08)',
+    border: '1px solid rgba(148, 163, 184, 0.25)',
   }
 }));
 
-const Pill = styled('div')<{ color: string }>(() => ({
-  width: 10,
-  height: 10,
-  borderRadius: 6,
-}));
+// Pill component removed as it's not used
 
 const GradientHeader = styled(Box)<{ gradient: string }>(({ gradient }) => ({
   background: gradient,
-  padding: '8px 12px',
+  padding: '12px 16px',
   color: 'white',
   display: 'flex',
   alignItems: 'center',
-  gap: 6,
+  gap: 8,
+  position: 'relative',
+  '&::after': {
+    content: '""',
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '1px',
+    background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)',
+  }
 }));
 
 const Badge = styled('span')(({ theme }) => ({
-  background: 'rgba(255,255,255,0.15)',
-  border: '1px solid rgba(255,255,255,0.35)',
+  background: 'rgba(255,255,255,0.2)',
+  border: '1px solid rgba(255,255,255,0.4)',
   color: 'white',
-  borderRadius: 999,
-  padding: '1px 6px',
+  borderRadius: 12,
+  padding: '4px 8px',
   fontWeight: 700,
-  fontSize: '0.65rem'
+  fontSize: '0.7rem',
+  backdropFilter: 'blur(8px)',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+  textShadow: '0 1px 2px rgba(0,0,0,0.3)'
 }));
 
 
@@ -263,20 +283,129 @@ const AnalyticsInsights: React.FC<AnalyticsInsightsProps> = ({ data, onActionCli
   };
 
   return (
-    <Box sx={{ mt: 1, mb: 1.5 }}>
-      <Box sx={{ position: 'relative', overflow: 'hidden' }}>
-        <Typography
-          variant="h6"
-          sx={{
-            fontWeight: 800,
-            mb: 1.5,
-            fontSize: '1.1rem',
-            color: 'rgba(255,255,255,0.95)',
-          }}
-        >
-          Today's Analytics Insights
-        </Typography>
+    <Box sx={{ 
+      mt: 1.4, 
+      mb: 1.4,
+      p: 2.1,
+      background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.9) 100%)',
+      backdropFilter: 'blur(24px)',
+      border: '1px solid rgba(148, 163, 184, 0.1)',
+      borderRadius: 4,
+      boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.05)',
+      position: 'relative',
+      overflow: 'hidden',
+      '&::before': {
+        content: '""',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.03) 0%, rgba(147, 51, 234, 0.02) 100%)',
+        zIndex: -1,
+      },
+    }}>
+      <Box sx={{ 
+        position: 'relative', 
+        overflow: 'hidden',
+        mb: 2.1,
+        pb: 1.4,
+        borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
+        '&::after': {
+          content: '""',
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: '1px',
+          background: 'linear-gradient(90deg, transparent 0%, rgba(59, 130, 246, 0.3) 50%, transparent 100%)',
+        }
+      }}>
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between',
+          width: '100%'
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <TrendingUpIcon sx={{ color: '#3b82f6', fontSize: '1.5rem' }} />
+            <Typography
+              variant="h5"
+              sx={{
+                fontWeight: 800,
+                fontSize: '1.4rem',
+                color: '#ffffff',
+                textShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                background: 'linear-gradient(135deg, #ffffff 0%, #e2e8f0 100%)',
+                backgroundClip: 'text',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}
+            >
+              Today's Analytics Insights
+            </Typography>
+          </Box>
+          
+          {/* Chat with Analytics Pro Button - Inline */}
+          <Button
+            disabled
+            variant="contained"
+            sx={{
+              background: 'linear-gradient(135deg, rgba(148, 163, 184, 0.1) 0%, rgba(100, 116, 139, 0.1) 100%)',
+              border: '1px solid rgba(148, 163, 184, 0.2)',
+              borderRadius: 2,
+              px: 2,
+              py: 0.8,
+              color: 'rgba(148, 163, 184, 0.6)',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              textTransform: 'none',
+              backdropFilter: 'blur(8px)',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+              position: 'relative',
+              overflow: 'hidden',
+              minWidth: 'auto',
+              '&::before': {
+                content: '""',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'linear-gradient(135deg, rgba(148, 163, 184, 0.05) 0%, rgba(100, 116, 139, 0.05) 100%)',
+                zIndex: -1,
+              },
+              '&:hover': {
+                background: 'linear-gradient(135deg, rgba(148, 163, 184, 0.1) 0%, rgba(100, 116, 139, 0.1) 100%)',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+              },
+              '&.Mui-disabled': {
+                background: 'linear-gradient(135deg, rgba(148, 163, 184, 0.1) 0%, rgba(100, 116, 139, 0.1) 100%)',
+                color: 'rgba(148, 163, 184, 0.6)',
+                border: '1px solid rgba(148, 163, 184, 0.2)',
+              }
+            }}
+          >
+            💬 Chat
+            <Chip
+              label="Pro"
+              size="small"
+              sx={{
+                ml: 1,
+                background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                color: 'white',
+                fontSize: '0.6rem',
+                fontWeight: 700,
+                height: 18,
+                '& .MuiChip-label': {
+                  px: 0.8,
+                }
+              }}
+            />
+          </Button>
+        </Box>
       </Box>
+      
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={1}>
         {columns.map((col) => {
           const isHovered = hovered === col.key;
@@ -291,27 +420,60 @@ const AnalyticsInsights: React.FC<AnalyticsInsightsProps> = ({ data, onActionCli
                   <Badge>{col.items.length}</Badge>
                 </GradientHeader>
 
-                <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
-                  <Stack spacing={0.5}>
+                <CardContent sx={{ p: 1.4, '&:last-child': { pb: 1.4 } }}>
+                  <Stack spacing={1.05}>
                     {visibleItems.map((insight) => (
                       <Box key={insight.id} sx={{
-                        background: 'rgba(255,255,255,0.08)',
-                        border: '1px solid rgba(255,255,255,0.18)',
-                        borderRadius: 1.5,
-                        p: 0.8
+                        background: 'rgba(15, 23, 42, 0.4)',
+                        border: '1px solid rgba(148, 163, 184, 0.1)',
+                        borderRadius: 2,
+                        p: 1.05,
+                        backdropFilter: 'blur(8px)',
+                        transition: 'all 0.2s ease-in-out',
+                        '&:hover': {
+                          background: 'rgba(15, 23, 42, 0.6)',
+                          border: '1px solid rgba(148, 163, 184, 0.2)',
+                          transform: 'translateY(-1px)',
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                        }
                       }}>
-                        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mb: 0.1 }}>
-                          <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.95)', fontWeight: 700, fontSize: '0.8rem' }}>
+                        <Stack direction="row" spacing={0.7} alignItems="center" sx={{ mb: 0.7 }}>
+                          <Typography variant="body2" sx={{ 
+                            color: '#ffffff', 
+                            fontWeight: 700, 
+                            fontSize: '0.85rem',
+                            textShadow: '0 1px 2px rgba(0,0,0,0.3)'
+                          }}>
                             {insight.title}
                           </Typography>
                           <TrendChip trend={insight.trend} />
                         </Stack>
-                        <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.7rem', lineHeight: 1.2 }}>
+                        <Typography variant="body2" sx={{ 
+                          color: 'rgba(255,255,255,0.8)', 
+                          fontSize: '0.75rem', 
+                          lineHeight: 1.4,
+                          mb: 0.7
+                        }}>
                           {insight.description}
                         </Typography>
-                        <Stack direction="row" spacing={0.5} sx={{ mt: 0.5 }}>
-                          <Chip size="small" label={`${insight.metric}: ${insight.value}`} sx={{ color: 'rgba(255,255,255,0.95)', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.24)', fontWeight: 700, fontSize: '0.65rem', height: 20 }} />
-                          <Chip size="small" label={insight.platform} sx={{ color: 'rgba(255,255,255,0.85)', background: 'rgba(255,255,255,0.08)', fontSize: '0.65rem', height: 20 }} />
+                        <Stack direction="row" spacing={0.7} sx={{ mt: 0.7 }}>
+                          <Chip size="small" label={`${insight.metric}: ${insight.value}`} sx={{ 
+                            color: '#ffffff', 
+                            background: 'rgba(59, 130, 246, 0.2)', 
+                            border: '1px solid rgba(59, 130, 246, 0.3)', 
+                            fontWeight: 700, 
+                            fontSize: '0.7rem', 
+                            height: 24,
+                            backdropFilter: 'blur(8px)'
+                          }} />
+                          <Chip size="small" label={insight.platform} sx={{ 
+                            color: 'rgba(255,255,255,0.9)', 
+                            background: 'rgba(148, 163, 184, 0.15)', 
+                            border: '1px solid rgba(148, 163, 184, 0.2)',
+                            fontSize: '0.7rem', 
+                            height: 24,
+                            backdropFilter: 'blur(8px)'
+                          }} />
                         </Stack>
                       </Box>
                     ))}

@@ -59,13 +59,15 @@ class CompetitorAnalyzer:
             prompt=competitor_prompt,
             schema=competitor_schema,
             temperature=0.3,
-            max_tokens=1000
+            max_tokens=4000
         )
         
         if isinstance(competitor_analysis, dict) and 'error' not in competitor_analysis:
+            logger.info("✅ AI competitor analysis completed successfully")
             return competitor_analysis
         else:
             # Fail gracefully - no fallback data
-            logger.error(f"AI competitor analysis failed: {competitor_analysis}")
-            raise ValueError(f"Competitor analysis failed: {competitor_analysis.get('error', 'Unknown error')}")
+            error_msg = competitor_analysis.get('error', 'Unknown error') if isinstance(competitor_analysis, dict) else str(competitor_analysis)
+            logger.error(f"AI competitor analysis failed: {error_msg}")
+            raise ValueError(f"Competitor analysis failed: {error_msg}")
     

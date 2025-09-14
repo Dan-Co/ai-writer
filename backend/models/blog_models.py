@@ -73,12 +73,14 @@ class BlogSectionRequest(BaseModel):
     keywords: List[str] = []
     tone: Optional[str] = None
     persona: Optional[PersonaInfo] = None
+    mode: Optional[str] = "polished"  # 'draft' | 'polished'
 
 
 class BlogSectionResponse(BaseModel):
     success: bool = True
     markdown: str
     citations: List[ResearchSource] = []
+    continuity_metrics: Optional[Dict[str, float]] = None
 
 
 class BlogOptimizeRequest(BaseModel):
