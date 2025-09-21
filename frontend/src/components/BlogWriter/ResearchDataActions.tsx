@@ -117,16 +117,14 @@ export const ResearchDataActions: React.FC<ResearchDataActionsProps> = ({
           custom_instructions: customInstructions
         };
 
-        const outlineResponse = await blogWriterApi.generateOutline(customOutlineRequest);
-        onOutlineCreated(outlineResponse.outline);
-        onTitleOptionsSet(outlineResponse.title_options);
-
+        // Start async outline generation
+        const { task_id } = await blogWriterApi.startOutlineGeneration(customOutlineRequest);
+        
         return {
           success: true,
-          message: `Created custom outline with ${outlineResponse.outline.length} sections based on your instructions: "${customInstructions}"`,
-          outline_sections: outlineResponse.outline.length,
-          title_options: outlineResponse.title_options.length,
-          next_step_suggestion: 'Great! Now you can enhance sections, generate content, or refine the outline further.'
+          message: `Custom outline generation started! Task ID: ${task_id}. Progress will be shown below.`,
+          task_id: task_id,
+          next_step_suggestion: 'The outline is being generated based on your custom instructions. You can monitor progress below.'
         };
       } catch (error) {
         return { 

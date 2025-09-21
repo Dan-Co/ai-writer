@@ -18,6 +18,7 @@ from models.blog_models import (
 from .outline_generator import OutlineGenerator
 from .outline_optimizer import OutlineOptimizer
 from .section_enhancer import SectionEnhancer
+from services.cache.persistent_outline_cache import persistent_outline_cache
 
 
 class OutlineService:
@@ -33,13 +34,90 @@ class OutlineService:
         Stage 2: Content Planning with AI-generated outline using research results
         Uses Gemini with research data to create comprehensive, SEO-optimized outline
         """
-        return await self.outline_generator.generate(request)
+        # Extract cache parameters - use original user keywords for consistent caching
+        keywords = request.research.original_keywords or request.research.keyword_analysis.get('primary', [])
+        industry = getattr(request.persona, 'industry', 'general') if request.persona else 'general'
+        target_audience = getattr(request.persona, 'target_audience', 'general') if request.persona else 'general'
+        word_count = request.word_count or 1500
+        custom_instructions = request.custom_instructions or ""
+        persona_data = request.persona.dict() if request.persona else None
+        
+        # Check cache first
+        cached_result = persistent_outline_cache.get_cached_outline(
+            keywords=keywords,
+            industry=industry,
+            target_audience=target_audience,
+            word_count=word_count,
+            custom_instructions=custom_instructions,
+            persona_data=persona_data
+        )
+        
+        if cached_result:
+            logger.info(f"Using cached outline for keywords: {keywords}")
+            return BlogOutlineResponse(**cached_result)
+        
+        # Generate new outline if not cached
+        logger.info(f"Generating new outline for keywords: {keywords}")
+        result = await self.outline_generator.generate(request)
+        
+        # Cache the result
+        persistent_outline_cache.cache_outline(
+            keywords=keywords,
+            industry=industry,
+            target_audience=target_audience,
+            word_count=word_count,
+            custom_instructions=custom_instructions,
+            persona_data=persona_data,
+            result=result.dict()
+        )
+        
+        return result
     
     async def generate_outline_with_progress(self, request: BlogOutlineRequest, task_id: str) -> BlogOutlineResponse:
         """
         Outline generation method with progress updates for real-time feedback.
         """
-        return await self.outline_generator.generate_with_progress(request, task_id)
+        # Extract cache parameters - use original user keywords for consistent caching
+        keywords = request.research.original_keywords or request.research.keyword_analysis.get('primary', [])
+        industry = getattr(request.persona, 'industry', 'general') if request.persona else 'general'
+        target_audience = getattr(request.persona, 'target_audience', 'general') if request.persona else 'general'
+        word_count = request.word_count or 1500
+        custom_instructions = request.custom_instructions or ""
+        persona_data = request.persona.dict() if request.persona else None
+        
+        # Check cache first
+        cached_result = persistent_outline_cache.get_cached_outline(
+            keywords=keywords,
+            industry=industry,
+            target_audience=target_audience,
+            word_count=word_count,
+            custom_instructions=custom_instructions,
+            persona_data=persona_data
+        )
+        
+        if cached_result:
+            logger.info(f"Using cached outline for keywords: {keywords} (with progress updates)")
+            # Update progress to show cache hit
+            from api.blog_writer.task_manager import task_manager
+            await task_manager.update_progress(task_id, "✅ Using cached outline (saved generation time!)")
+            return BlogOutlineResponse(**cached_result)
+        
+        # Generate new outline if not cached
+        logger.info(f"Generating new outline for keywords: {keywords} (with progress updates)")
+        result = await self.outline_generator.generate_with_progress(request, task_id)
+        
+        # Cache the result
+        persistent_outline_cache.cache_outline(
+            keywords=keywords,
+            industry=industry,
+            target_audience=target_audience,
+            word_count=word_count,
+            custom_instructions=custom_instructions,
+            persona_data=persona_data,
+            result=result.dict()
+        )
+        
+        return result
     
     async def refine_outline(self, request: BlogOutlineRefineRequest) -> BlogOutlineResponse:
         """
@@ -152,3 +230,29 @@ class OutlineService:
     def rebalance_word_counts(self, outline: List[BlogOutlineSection], target_words: int) -> List[BlogOutlineSection]:
         """Rebalance word count distribution across sections."""
         return self.outline_optimizer.rebalance_word_counts(outline, target_words)
+    
+    # Cache Management Methods
+    
+    def get_outline_cache_stats(self) -> Dict[str, Any]:
+        """Get outline cache statistics."""
+        return persistent_outline_cache.get_cache_stats()
+    
+    def clear_outline_cache(self):
+        """Clear all cached outline entries."""
+        persistent_outline_cache.clear_cache()
+        logger.info("Outline cache cleared")
+    
+    def invalidate_outline_cache_for_keywords(self, keywords: List[str]):
+        """
+        Invalidate outline cache entries for specific keywords.
+        Useful when research data is updated.
+        
+        Args:
+            keywords: Keywords to invalidate cache for
+        """
+        persistent_outline_cache.invalidate_cache_for_keywords(keywords)
+        logger.info(f"Invalidated outline cache for keywords: {keywords}")
+    
+    def get_recent_outline_cache_entries(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Get recent outline cache entries for debugging."""
+        return persistent_outline_cache.get_cache_entries(limit)

@@ -205,10 +205,8 @@ Persistence
 ## 4) Backend APIs ✅ **FULLY IMPLEMENTED**
 
 **✅ IMPLEMENTED BLOG ENDPOINTS:**
-- `POST /api/blog/research` → comprehensive research with Google Search grounding
 - `POST /api/blog/research/start` → async research with progress tracking
 - `GET /api/blog/research/status/{task_id}` → research progress status
-- `POST /api/blog/outline/generate` → AI-powered outline generation
 - `POST /api/blog/outline/start` → async outline generation with progress
 - `GET /api/blog/outline/status/{task_id}` → outline progress status
 - `POST /api/blog/outline/refine` → outline refinement operations

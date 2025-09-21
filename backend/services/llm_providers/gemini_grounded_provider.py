@@ -89,12 +89,13 @@ class GeminiGroundedProvider:
                     logger.warning(f"URL Context tool not available in SDK version: {tool_err}")
             
             # Apply mode presets (Draft vs Polished)
-            model_id = "gemini-2.5-flash"
+            # Use Gemini 2.0 Flash for better content generation with grounding
+            model_id = "gemini-2.0-flash"
             if mode == "draft":
-                model_id = "gemini-2.5-flash-lite"
+                model_id = "gemini-2.0-flash"
                 temperature = min(1.0, max(0.0, temperature))
             else:
-                model_id = "gemini-2.5-flash"
+                model_id = "gemini-2.0-flash"
 
             # Configure generation settings
             config = types.GenerateContentConfig(
@@ -189,7 +190,7 @@ class GeminiGroundedProvider:
                 loop.run_in_executor(
                     executor,
                     lambda: self.client.models.generate_content(
-                        model="gemini-2.5-flash",
+                        model="gemini-2.0-flash",
                         contents=grounded_prompt,
                         config=config,
                     )
@@ -199,6 +200,10 @@ class GeminiGroundedProvider:
 
     async def _make_api_request_with_model(self, grounded_prompt: str, config: Any, model_id: str, urls: Optional[List[str]] = None):
         """Make the API request with explicit model id and optional URL injection."""
+        logger.info(f"🔍 DEBUG: Making API request with model: {model_id}")
+        logger.info(f"🔍 DEBUG: Prompt length: {len(grounded_prompt)} characters")
+        logger.info(f"🔍 DEBUG: Prompt preview (first 300 chars): {grounded_prompt[:300]}...")
+        
         import concurrent.futures
         loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -310,23 +315,70 @@ class GeminiGroundedProvider:
             Processed content with sources and citations
         """
         try:
-            # Extract the main content
+            # Debug: Log response structure
+            logger.info(f"🔍 DEBUG: Response type: {type(response)}")
+            logger.info(f"🔍 DEBUG: Response has 'text': {hasattr(response, 'text')}")
+            logger.info(f"🔍 DEBUG: Response has 'candidates': {hasattr(response, 'candidates')}")
+            logger.info(f"🔍 DEBUG: Response has 'grounding_metadata': {hasattr(response, 'grounding_metadata')}")
+            if hasattr(response, 'grounding_metadata'):
+                logger.info(f"🔍 DEBUG: Grounding metadata: {response.grounding_metadata}")
+            if hasattr(response, 'candidates') and response.candidates:
+                logger.info(f"🔍 DEBUG: Number of candidates: {len(response.candidates)}")
+                candidate = response.candidates[0]
+                logger.info(f"🔍 DEBUG: Candidate type: {type(candidate)}")
+                logger.info(f"🔍 DEBUG: Candidate has 'content': {hasattr(candidate, 'content')}")
+                if hasattr(candidate, 'content') and candidate.content:
+                    logger.info(f"🔍 DEBUG: Content type: {type(candidate.content)}")
+                    # Check if content is a list or single object
+                    if hasattr(candidate.content, '__iter__') and not isinstance(candidate.content, str):
+                        try:
+                            content_length = len(candidate.content) if candidate.content else 0
+                            logger.info(f"🔍 DEBUG: Content is iterable, length: {content_length}")
+                        except TypeError:
+                            logger.info(f"🔍 DEBUG: Content is iterable but has no len() - treating as single object")
+                        for i, part in enumerate(candidate.content):
+                            logger.info(f"🔍 DEBUG: Part {i} type: {type(part)}")
+                            logger.info(f"🔍 DEBUG: Part {i} has 'text': {hasattr(part, 'text')}")
+                            if hasattr(part, 'text'):
+                                logger.info(f"🔍 DEBUG: Part {i} text length: {len(part.text) if part.text else 0}")
+                    else:
+                        logger.info(f"🔍 DEBUG: Content is single object, has 'text': {hasattr(candidate.content, 'text')}")
+                        if hasattr(candidate.content, 'text'):
+                            logger.info(f"🔍 DEBUG: Content text length: {len(candidate.content.text) if candidate.content.text else 0}")
+            
+            # Extract the main content - prioritize response.text as it's more reliable
             content = ""
             if hasattr(response, 'text'):
-                content = response.text
+                logger.info(f"🔍 DEBUG: response.text exists, value: '{response.text}', type: {type(response.text)}")
+                if response.text:
+                    content = response.text
+                    logger.info(f"🔍 DEBUG: Using response.text, length: {len(content)}")
+                else:
+                    logger.info(f"🔍 DEBUG: response.text is empty or None")
             elif hasattr(response, 'candidates') and response.candidates:
                 candidate = response.candidates[0]
                 if hasattr(candidate, 'content') and candidate.content:
-                    # Extract text from content parts
-                    text_parts = []
-                    for part in candidate.content:
-                        if hasattr(part, 'text'):
-                            text_parts.append(part.text)
-                    content = " ".join(text_parts)
+                    # Handle both single Content object and list of parts
+                    if hasattr(candidate.content, '__iter__') and not isinstance(candidate.content, str):
+                        # Content is a list of parts
+                        text_parts = []
+                        for part in candidate.content:
+                            if hasattr(part, 'text'):
+                                text_parts.append(part.text)
+                        content = " ".join(text_parts)
+                        logger.info(f"🔍 DEBUG: Using candidate.content (list), extracted {len(text_parts)} parts, total length: {len(content)}")
+                    else:
+                        # Content is a single object
+                        if hasattr(candidate.content, 'text'):
+                            content = candidate.content.text
+                            logger.info(f"🔍 DEBUG: Using candidate.content (single), text length: {len(content)}")
+                        else:
+                            logger.warning("🔍 DEBUG: candidate.content has no 'text' attribute")
             
             logger.info(f"Extracted content length: {len(content) if content else 0}")
             if not content:
-                logger.warning("No content extracted from response")
+                logger.warning("⚠️ No content extracted from Gemini response - using fallback content")
+                logger.warning("⚠️ This indicates Google Search grounding is not working properly")
                 content = "Generated content about the requested topic."
             
             # Initialize result structure

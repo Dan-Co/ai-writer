@@ -1,13 +1,27 @@
 import React, { useState } from 'react';
-import { BlogOutlineSection } from '../../services/blogWriterApi';
+import { BlogOutlineSection, SourceMappingStats, GroundingInsights, OptimizationResults, ResearchCoverage } from '../../services/blogWriterApi';
+import EnhancedOutlineInsights from './EnhancedOutlineInsights';
+import OutlineIntelligenceChips from './OutlineIntelligenceChips';
 
 interface Props {
   outline: BlogOutlineSection[];
   onRefine: (operation: string, sectionId?: string, payload?: any) => void;
   research?: any; // Research data for context
+  sourceMappingStats?: SourceMappingStats | null;
+  groundingInsights?: GroundingInsights | null;
+  optimizationResults?: OptimizationResults | null;
+  researchCoverage?: ResearchCoverage | null;
 }
 
-const EnhancedOutlineEditor: React.FC<Props> = ({ outline, onRefine, research }) => {
+const EnhancedOutlineEditor: React.FC<Props> = ({ 
+  outline, 
+  onRefine, 
+  research, 
+  sourceMappingStats, 
+  groundingInsights, 
+  optimizationResults, 
+  researchCoverage 
+}) => {
   const [editingSection, setEditingSection] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [showAddSection, setShowAddSection] = useState(false);
@@ -87,13 +101,25 @@ const EnhancedOutlineEditor: React.FC<Props> = ({ outline, onRefine, research })
         borderBottom: '1px solid #e0e0e0'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h2 style={{ margin: 0, color: '#333', fontSize: '20px' }}>
-              📋 Blog Outline
-            </h2>
-            <p style={{ margin: '4px 0 0 0', color: '#666', fontSize: '14px' }}>
-              {outline.length} sections • {getTotalWords()} words total
-            </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div>
+              <h2 style={{ margin: 0, color: '#333', fontSize: '20px' }}>
+                📋 Blog Outline
+              </h2>
+              <p style={{ margin: '4px 0 0 0', color: '#666', fontSize: '14px' }}>
+                {outline.length} sections • {getTotalWords()} words total
+              </p>
+            </div>
+            {/* Intelligence Chips inline with title */}
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <OutlineIntelligenceChips
+                sections={outline}
+                sourceMappingStats={sourceMappingStats}
+                groundingInsights={groundingInsights}
+                optimizationResults={optimizationResults}
+                researchCoverage={researchCoverage}
+              />
+            </div>
           </div>
           <button
             onClick={() => setShowAddSection(!showAddSection)}
@@ -115,6 +141,7 @@ const EnhancedOutlineEditor: React.FC<Props> = ({ outline, onRefine, research })
           </button>
         </div>
       </div>
+
 
       {/* Add Section Form */}
       {showAddSection && (

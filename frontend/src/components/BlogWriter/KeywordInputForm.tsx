@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { useCopilotAction } from '@copilotkit/react-core';
 import { blogWriterApi, BlogResearchRequest, BlogResearchResponse } from '../../services/blogWriterApi';
+import ResearchPollingHandler from './ResearchPollingHandler';
+import { researchCache } from '../../services/researchCache';
 
 const useCopilotActionTyped = useCopilotAction as any;
 
 interface KeywordInputFormProps {
   onKeywordsReceived?: (data: { keywords: string; blogLength: string }) => void;
   onResearchComplete?: (researchData: BlogResearchResponse) => void;
+  onTaskStart?: (taskId: string) => void;
 }
 
 // Separate component to manage form state
@@ -138,7 +141,8 @@ const ResearchForm: React.FC<{
   );
 };
 
-export const KeywordInputForm: React.FC<KeywordInputFormProps> = ({ onKeywordsReceived, onResearchComplete }) => {
+export const KeywordInputForm: React.FC<KeywordInputFormProps> = ({ onKeywordsReceived, onResearchComplete, onTaskStart }) => {
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
 
   // Keyword input action with Human-in-the-Loop
   useCopilotActionTyped({
@@ -190,7 +194,19 @@ export const KeywordInputForm: React.FC<KeywordInputFormProps> = ({ onKeywordsRe
         
         const keywordList = keywords.includes(',') 
           ? keywords.split(',').map((k: string) => k.trim())
-          : keywords.split(' ').filter((k: string) => k.length > 2).slice(0, 5);
+          : [keywords.trim()]; // Preserve single phrases as-is
+        
+        // Check frontend cache first
+        const cachedResult = researchCache.getCachedResult(keywordList, 'General', 'General');
+        if (cachedResult) {
+          console.log('Frontend cache hit - returning cached result instantly');
+          onResearchComplete?.(cachedResult);
+          return { 
+            success: true, 
+            message: `✅ Found cached research for "${keywords}"! Results loaded instantly.`,
+            cached: true
+          };
+        }
         
         const payload: BlogResearchRequest = { 
           keywords: keywordList, 
@@ -199,24 +215,18 @@ export const KeywordInputForm: React.FC<KeywordInputFormProps> = ({ onKeywordsRe
           word_count_target: parseInt(blogLength)
         };
         
-        const res = await blogWriterApi.research(payload);
-        onResearchComplete?.(res);
+        // Store the blog length in localStorage for later use
+        localStorage.setItem('blog_length_target', blogLength);
         
-        const sourcesCount = res.sources?.length || 0;
-        const queriesCount = res.search_queries?.length || 0;
-        const anglesCount = res.suggested_angles?.length || 0;
+        // Start async research
+        const { task_id } = await blogWriterApi.startResearch(payload);
+        setCurrentTaskId(task_id);
+        onTaskStart?.(task_id); // Notify parent component to start polling
         
         return { 
           success: true, 
-          message: `🔍 Research completed for "${keywords}"! Found ${sourcesCount} sources, ${queriesCount} search queries, and ${anglesCount} content angles. The research results are now displayed in the UI.`,
-          research_summary: {
-            topic: keywords,
-            sources: sourcesCount,
-            queries: queriesCount,
-            angles: anglesCount,
-            primary_keywords: res.keyword_analysis?.primary || [],
-            search_intent: res.keyword_analysis?.search_intent || 'informational'
-          }
+          message: `🔍 Research started for "${keywords}"! Task ID: ${task_id}. Progress will be shown below.`,
+          task_id: task_id
         };
       } catch (error) {
         console.error(`Research failed: ${error}`);
@@ -266,7 +276,22 @@ export const KeywordInputForm: React.FC<KeywordInputFormProps> = ({ onKeywordsRe
     }
   });
 
-  return null; // This component only provides the CopilotKit action, no UI
+  return (
+    <>
+      {/* Polling handler for research progress */}
+      <ResearchPollingHandler
+        taskId={currentTaskId}
+        onResearchComplete={(result) => {
+          onResearchComplete?.(result);
+          setCurrentTaskId(null);
+        }}
+        onError={(error) => {
+          console.error('Research error:', error);
+          setCurrentTaskId(null);
+        }}
+      />
+    </>
+  );
 };
 
 export default KeywordInputForm;

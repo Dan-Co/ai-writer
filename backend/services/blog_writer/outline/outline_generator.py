@@ -4,7 +4,7 @@ Outline Generator - AI-powered outline generation from research data.
 Generates comprehensive, SEO-optimized outlines using research intelligence.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 import asyncio
 from loguru import logger
 
@@ -14,9 +14,33 @@ from models.blog_models import (
     BlogOutlineSection,
 )
 
+from .source_mapper import SourceToSectionMapper
+from .section_enhancer import SectionEnhancer
+from .outline_optimizer import OutlineOptimizer
+from .grounding_engine import GroundingContextEngine
+from .title_generator import TitleGenerator
+from .metadata_collector import MetadataCollector
+from .prompt_builder import PromptBuilder
+from .response_processor import ResponseProcessor
+from .parallel_processor import ParallelProcessor
+
 
 class OutlineGenerator:
     """Generates AI-powered outlines from research data."""
+    
+    def __init__(self):
+        """Initialize the outline generator with all enhancement modules."""
+        self.source_mapper = SourceToSectionMapper()
+        self.section_enhancer = SectionEnhancer()
+        self.outline_optimizer = OutlineOptimizer()
+        self.grounding_engine = GroundingContextEngine()
+        
+        # Initialize extracted classes
+        self.title_generator = TitleGenerator()
+        self.metadata_collector = MetadataCollector()
+        self.prompt_builder = PromptBuilder()
+        self.response_processor = ResponseProcessor()
+        self.parallel_processor = ParallelProcessor(self.source_mapper, self.grounding_engine)
     
     async def generate(self, request: BlogOutlineRequest) -> BlogOutlineResponse:
         """
@@ -34,7 +58,7 @@ class OutlineGenerator:
         custom_instructions = getattr(request, 'custom_instructions', None)
         
         # Build comprehensive outline generation prompt with rich research data
-        outline_prompt = self._build_outline_prompt(
+        outline_prompt = self.prompt_builder.build_outline_prompt(
             primary_keywords, secondary_keywords, content_angles, sources,
             search_intent, request, custom_instructions
         )
@@ -42,32 +66,63 @@ class OutlineGenerator:
         logger.info("Generating AI-powered outline using research results")
         
         # Define schema with proper property ordering (critical for Gemini API)
-        outline_schema = self._get_outline_schema()
+        outline_schema = self.prompt_builder.get_outline_schema()
         
         # Generate outline using structured JSON response with retry logic
-        outline_data = await self._generate_with_retry(outline_prompt, outline_schema)
+        outline_data = await self.response_processor.generate_with_retry(outline_prompt, outline_schema)
         
         # Convert to BlogOutlineSection objects
-        outline_sections = self._convert_to_sections(outline_data, sources)
+        outline_sections = self.response_processor.convert_to_sections(outline_data, sources)
         
-        # Extract title options
-        title_options = outline_data.get('title_options', [])
-        if not title_options:
-            title_options = self._generate_fallback_titles(primary_keywords)
+        # Run parallel processing for speed optimization
+        mapped_sections, grounding_insights = await self.parallel_processor.run_parallel_processing_async(
+            outline_sections, research
+        )
         
-        logger.info(f"Generated outline with {len(outline_sections)} sections and {len(title_options)} title options")
+        # Enhance sections with grounding insights
+        logger.info("Enhancing sections with grounding insights...")
+        grounding_enhanced_sections = self.grounding_engine.enhance_sections_with_grounding(
+            mapped_sections, research.grounding_metadata, grounding_insights
+        )
+        
+        # Optimize outline for better flow, SEO, and engagement
+        logger.info("Optimizing outline for better flow and engagement...")
+        optimized_sections = await self.outline_optimizer.optimize(grounding_enhanced_sections, "comprehensive optimization")
+        
+        # Rebalance word counts for optimal distribution
+        target_words = request.word_count or 1500
+        balanced_sections = self.outline_optimizer.rebalance_word_counts(optimized_sections, target_words)
+        
+        # Extract title options - combine AI-generated with content angles
+        ai_title_options = outline_data.get('title_options', [])
+        content_angle_titles = self.title_generator.extract_content_angle_titles(research)
+        
+        # Combine AI-generated titles with content angles
+        title_options = self.title_generator.combine_title_options(ai_title_options, content_angle_titles, primary_keywords)
+        
+        logger.info(f"Generated optimized outline with {len(balanced_sections)} sections and {len(title_options)} title options")
+        
+        # Collect metadata for enhanced UI
+        source_mapping_stats = self.metadata_collector.collect_source_mapping_stats(mapped_sections, research)
+        grounding_insights_data = self.metadata_collector.collect_grounding_insights(grounding_insights)
+        optimization_results = self.metadata_collector.collect_optimization_results(optimized_sections, "comprehensive optimization")
+        research_coverage = self.metadata_collector.collect_research_coverage(research)
         
         return BlogOutlineResponse(
             success=True,
             title_options=title_options,
-            outline=outline_sections
+            outline=balanced_sections,
+            source_mapping_stats=source_mapping_stats,
+            grounding_insights=grounding_insights_data,
+            optimization_results=optimization_results,
+            research_coverage=research_coverage
         )
     
     async def generate_with_progress(self, request: BlogOutlineRequest, task_id: str) -> BlogOutlineResponse:
         """
         Outline generation method with progress updates for real-time feedback.
         """
-        from api.blog_writer.router import _update_progress
+        from api.blog_writer.task_manager import task_manager
         
         # Extract research insights
         research = request.research
@@ -80,272 +135,168 @@ class OutlineGenerator:
         # Check for custom instructions
         custom_instructions = getattr(request, 'custom_instructions', None)
         
-        await _update_progress(task_id, "📊 Analyzing research data and building content strategy...")
+        await task_manager.update_progress(task_id, "📊 Analyzing research data and building content strategy...")
         
         # Build comprehensive outline generation prompt with rich research data
-        outline_prompt = self._build_outline_prompt(
+        outline_prompt = self.prompt_builder.build_outline_prompt(
             primary_keywords, secondary_keywords, content_angles, sources,
             search_intent, request, custom_instructions
         )
         
-        await _update_progress(task_id, "🤖 Generating AI-powered outline with research insights...")
+        await task_manager.update_progress(task_id, "🤖 Generating AI-powered outline with research insights...")
         
         # Define schema with proper property ordering (critical for Gemini API)
-        outline_schema = self._get_outline_schema()
+        outline_schema = self.prompt_builder.get_outline_schema()
         
-        await _update_progress(task_id, "🔄 Making AI request to generate structured outline...")
+        await task_manager.update_progress(task_id, "🔄 Making AI request to generate structured outline...")
         
         # Generate outline using structured JSON response with retry logic
-        outline_data = await self._generate_with_retry(outline_prompt, outline_schema, task_id)
+        outline_data = await self.response_processor.generate_with_retry(outline_prompt, outline_schema, task_id)
         
-        await _update_progress(task_id, "📝 Processing outline structure and validating sections...")
+        await task_manager.update_progress(task_id, "📝 Processing outline structure and validating sections...")
         
         # Convert to BlogOutlineSection objects
-        outline_sections = self._convert_to_sections(outline_data, sources)
+        outline_sections = self.response_processor.convert_to_sections(outline_data, sources)
         
-        # Extract title options
-        title_options = outline_data.get('title_options', [])
-        if not title_options:
-            title_options = self._generate_fallback_titles(primary_keywords)
+        # Run parallel processing for speed optimization
+        mapped_sections, grounding_insights = await self.parallel_processor.run_parallel_processing(
+            outline_sections, research, task_id
+        )
         
-        await _update_progress(task_id, "✅ Outline generation completed successfully!")
+        # Enhance sections with grounding insights (depends on both previous tasks)
+        await task_manager.update_progress(task_id, "✨ Enhancing sections with grounding insights...")
+        grounding_enhanced_sections = self.grounding_engine.enhance_sections_with_grounding(
+            mapped_sections, research.grounding_metadata, grounding_insights
+        )
+        
+        # Optimize outline for better flow, SEO, and engagement
+        await task_manager.update_progress(task_id, "🎯 Optimizing outline for better flow and engagement...")
+        optimized_sections = await self.outline_optimizer.optimize(grounding_enhanced_sections, "comprehensive optimization")
+        
+        # Rebalance word counts for optimal distribution
+        await task_manager.update_progress(task_id, "⚖️ Rebalancing word count distribution...")
+        target_words = request.word_count or 1500
+        balanced_sections = self.outline_optimizer.rebalance_word_counts(optimized_sections, target_words)
+        
+        # Extract title options - combine AI-generated with content angles
+        ai_title_options = outline_data.get('title_options', [])
+        content_angle_titles = self.title_generator.extract_content_angle_titles(research)
+        
+        # Combine AI-generated titles with content angles
+        title_options = self.title_generator.combine_title_options(ai_title_options, content_angle_titles, primary_keywords)
+        
+        await task_manager.update_progress(task_id, "✅ Outline generation and optimization completed successfully!")
+        
+        # Collect metadata for enhanced UI
+        source_mapping_stats = self.metadata_collector.collect_source_mapping_stats(mapped_sections, research)
+        grounding_insights_data = self.metadata_collector.collect_grounding_insights(grounding_insights)
+        optimization_results = self.metadata_collector.collect_optimization_results(optimized_sections, "comprehensive optimization")
+        research_coverage = self.metadata_collector.collect_research_coverage(research)
         
         return BlogOutlineResponse(
             success=True,
             title_options=title_options,
-            outline=outline_sections
+            outline=balanced_sections,
+            source_mapping_stats=source_mapping_stats,
+            grounding_insights=grounding_insights_data,
+            optimization_results=optimization_results,
+            research_coverage=research_coverage
         )
     
-    def _build_outline_prompt(self, primary_keywords: List[str], secondary_keywords: List[str], 
-                            content_angles: List[str], sources: List, search_intent: str,
-                            request: BlogOutlineRequest, custom_instructions: str = None) -> str:
-        """Build the comprehensive outline generation prompt."""
-        return f"""
-        You are a world-class content strategist and SEO expert with 15+ years of experience creating viral, high-converting blog content. Your outlines have generated millions of views and driven significant business results.
-
-        CONTENT STRATEGY BRIEF:
-        Topic: {', '.join(primary_keywords)}
-        Search Intent: {search_intent}
-        Target Word Count: {request.word_count or 1500} words
-        Industry Context: {getattr(request.persona, 'industry', 'General') if request.persona else 'General'}
-        Audience: {getattr(request.persona, 'target_audience', 'General') if request.persona else 'General'}
-        
-        {f"CUSTOM USER INSTRUCTIONS: {custom_instructions}" if custom_instructions else ""}
-
-        RESEARCH INTELLIGENCE:
-        Primary Keywords: {', '.join(primary_keywords)}
-        Secondary Keywords: {', '.join(secondary_keywords)}
-        Long-tail Opportunities: {', '.join(request.research.keyword_analysis.get('long_tail', [])[:5])}
-        Semantic Keywords: {', '.join(request.research.keyword_analysis.get('semantic_keywords', [])[:5])}
-        Trending Terms: {', '.join(request.research.keyword_analysis.get('trending_terms', [])[:3])}
-        Keyword Difficulty: {request.research.keyword_analysis.get('difficulty', 6)}/10
-        Content Gaps: {', '.join(request.research.keyword_analysis.get('content_gaps', [])[:3])}
-        
-        Content Angles Discovered:
-        {chr(10).join([f"• {angle}" for angle in content_angles[:6]])}
-        
-        Competitive Intelligence:
-        Top Competitors: {', '.join(request.research.competitor_analysis.get('top_competitors', [])[:3])}
-        Market Opportunities: {', '.join(request.research.competitor_analysis.get('opportunities', [])[:3])}
-        Competitive Advantages: {', '.join(request.research.competitor_analysis.get('competitive_advantages', [])[:3])}
-        Market Positioning: {request.research.competitor_analysis.get('market_positioning', 'Standard positioning')}
-        
-        Research Sources Available: {len(sources)} authoritative sources with current data
-        Key Statistics Available: Multiple data points, percentages, and expert quotes from credible sources
-
-        STRATEGIC OUTLINE REQUIREMENTS:
-        
-        {f"CUSTOM REQUIREMENTS: {custom_instructions}" if custom_instructions else ""}
-        
-        1. CONTENT ARCHITECTURE:
-        - Create a logical, engaging narrative arc that guides readers from problem to solution
-        - Structure content to build authority and trust progressively
-        - Include data-driven insights and expert opinions from research
-        - Ensure each section adds unique value and builds upon previous sections
-        
-        2. SEO OPTIMIZATION:
-        - Naturally integrate primary keywords in headings and content
-        - Use secondary keywords strategically throughout sections
-        - Include long-tail keywords in subheadings and key points
-        - Optimize for featured snippets and voice search
-        
-        3. READER ENGAGEMENT:
-        - Start with compelling hooks and pain points
-        - Use storytelling elements and real-world examples
-        - Include actionable insights and practical takeaways
-        - End with clear next steps and calls-to-action
-        
-        4. CONTENT DEPTH:
-        - Provide comprehensive coverage of the topic
-        - Include multiple perspectives and expert insights
-        - Address common questions and objections
-        - Offer unique angles not covered by competitors
-        
-        5. WORD COUNT DISTRIBUTION:
-        - Introduction: 12% of total word count
-        - Main content sections: 76% of total word count
-        - Conclusion: 12% of total word count
-        - Ensure balanced section lengths for optimal readability
-        
-        6. COMPETITIVE ADVANTAGE:
-        - Leverage content gaps identified in research
-        - Include unique data points and statistics
-        - Provide fresh perspectives on trending topics
-        - Address underserved audience segments
-
-        TITLE STRATEGY:
-        Create 5 compelling title options that:
-        - Include primary keywords naturally
-        - Promise clear value and outcomes
-        - Appeal to the target audience's pain points
-        - Stand out from competitor content
-        - Optimize for click-through rates
-
-        Generate a comprehensive outline with the following structure:
-        {{
-            "title_options": [
-                "Title 1 with primary keyword",
-                "Title 2 with emotional hook",
-                "Title 3 with benefit-focused approach",
-                "Title 4 with question format",
-                "Title 5 with urgency/trending angle"
-            ],
-            "outline": [
-                {{
-                    "heading": "Section heading with primary keyword",
-                    "subheadings": ["Subheading 1", "Subheading 2", "Subheading 3"],
-                    "key_points": ["Key point 1", "Key point 2", "Key point 3"],
-                    "word_count": 300,
-                    "keywords": ["primary keyword", "secondary keyword"]
-                }}
-            ]
-        }}
+    
+    
+    async def enhance_section(self, section: BlogOutlineSection, focus: str = "general improvement") -> BlogOutlineSection:
         """
-    
-    def _get_outline_schema(self) -> Dict[str, Any]:
-        """Get the structured JSON schema for outline generation."""
-        return {
-            "type": "object",
-            "properties": {
-                "title_options": {
-                    "type": "array",
-                    "items": {"type": "string"}
-                },
-                "outline": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "heading": {"type": "string"},
-                            "subheadings": {
-                                "type": "array",
-                                "items": {"type": "string"}
-                            },
-                            "key_points": {
-                                "type": "array",
-                                "items": {"type": "string"}
-                            },
-                            "word_count": {"type": "integer"},
-                            "keywords": {
-                                "type": "array",
-                                "items": {"type": "string"}
-                            }
-                        },
-                        "required": ["heading", "subheadings", "key_points", "word_count", "keywords"]
-                    }
-                }
-            },
-            "required": ["title_options", "outline"],
-            "propertyOrdering": ["title_options", "outline"]
-        }
-    
-    async def _generate_with_retry(self, prompt: str, schema: Dict[str, Any], task_id: str = None) -> Dict[str, Any]:
-        """Generate outline with retry logic for API failures."""
-        from services.llm_providers.gemini_provider import gemini_structured_json_response
-        from api.blog_writer.router import _update_progress
+        Enhance a single section using AI with research context.
         
-        max_retries = 2  # Conservative retry for expensive API calls
-        retry_delay = 5  # 5 second delay between retries
-        
-        for attempt in range(max_retries + 1):
-            try:
-                if task_id:
-                    await _update_progress(task_id, f"🤖 Calling Gemini API for outline generation (attempt {attempt + 1}/{max_retries + 1})...")
-                
-                outline_data = gemini_structured_json_response(
-                    prompt=prompt,
-                    schema=schema,
-                    temperature=0.3,
-                    max_tokens=4000  # Increased to avoid MAX_TOKENS truncation
-                )
-                
-                # Log response for debugging
-                logger.info(f"Gemini response received: {type(outline_data)}")
-                
-                # Check for errors in the response
-                if isinstance(outline_data, dict) and 'error' in outline_data:
-                    error_msg = str(outline_data['error'])
-                    if "503" in error_msg and "overloaded" in error_msg and attempt < max_retries:
-                        if task_id:
-                            await _update_progress(task_id, f"⚠️ AI service overloaded, retrying in {retry_delay} seconds...")
-                        logger.warning(f"Gemini API overloaded, retrying in {retry_delay} seconds (attempt {attempt + 1}/{max_retries + 1})")
-                        await asyncio.sleep(retry_delay)
-                        continue
-                    else:
-                        logger.error(f"Gemini structured response error: {outline_data['error']}")
-                        raise ValueError(f"AI outline generation failed: {outline_data['error']}")
-                
-                # Validate required fields
-                if not isinstance(outline_data, dict) or 'outline' not in outline_data or not isinstance(outline_data['outline'], list):
-                    if attempt < max_retries:
-                        if task_id:
-                            await _update_progress(task_id, f"⚠️ Invalid response structure, retrying in {retry_delay} seconds...")
-                        logger.warning(f"Invalid response structure, retrying in {retry_delay} seconds (attempt {attempt + 1}/{max_retries + 1})")
-                        await asyncio.sleep(retry_delay)
-                        continue
-                    else:
-                        raise ValueError("Invalid outline structure in Gemini response")
-                
-                # If we get here, the response is valid
-                return outline_data
-                
-            except Exception as e:
-                error_str = str(e)
-                if ("503" in error_str or "overloaded" in error_str) and attempt < max_retries:
-                    if task_id:
-                        await _update_progress(task_id, f"⚠️ AI service error, retrying in {retry_delay} seconds...")
-                    logger.warning(f"Gemini API error, retrying in {retry_delay} seconds (attempt {attempt + 1}/{max_retries + 1}): {error_str}")
-                    await asyncio.sleep(retry_delay)
-                    continue
-                else:
-                    logger.error(f"Outline generation failed after {attempt + 1} attempts: {error_str}")
-                    raise ValueError(f"AI outline generation failed: {error_str}")
+        Args:
+            section: The section to enhance
+            focus: Enhancement focus area (e.g., "SEO optimization", "engagement", "comprehensiveness")
+            
+        Returns:
+            Enhanced section with improved content
+        """
+        logger.info(f"Enhancing section '{section.heading}' with focus: {focus}")
+        enhanced_section = await self.section_enhancer.enhance(section, focus)
+        logger.info(f"✅ Section enhancement completed for '{section.heading}'")
+        return enhanced_section
     
-    def _convert_to_sections(self, outline_data: Dict[str, Any], sources: List) -> List[BlogOutlineSection]:
-        """Convert outline data to BlogOutlineSection objects."""
-        outline_sections = []
-        for i, section_data in enumerate(outline_data.get('outline', [])):
-            if not isinstance(section_data, dict) or 'heading' not in section_data:
-                continue
-                
-            section = BlogOutlineSection(
-                id=f"s{i+1}",
-                heading=section_data.get('heading', f'Section {i+1}'),
-                subheadings=section_data.get('subheadings', []),
-                key_points=section_data.get('key_points', []),
-                references=sources[:3],  # Use first 3 sources as references
-                target_words=section_data.get('word_count', 200),
-                keywords=section_data.get('keywords', [])
-            )
-            outline_sections.append(section)
+    async def optimize_outline(self, outline: List[BlogOutlineSection], focus: str = "comprehensive optimization") -> List[BlogOutlineSection]:
+        """
+        Optimize an entire outline for better flow, SEO, and engagement.
         
-        return outline_sections
+        Args:
+            outline: List of sections to optimize
+            focus: Optimization focus area
+            
+        Returns:
+            Optimized outline with improved flow and engagement
+        """
+        logger.info(f"Optimizing outline with {len(outline)} sections, focus: {focus}")
+        optimized_outline = await self.outline_optimizer.optimize(outline, focus)
+        logger.info(f"✅ Outline optimization completed for {len(optimized_outline)} sections")
+        return optimized_outline
     
-    def _generate_fallback_titles(self, primary_keywords: List[str]) -> List[str]:
-        """Generate fallback titles when AI generation fails."""
-        primary_keyword = primary_keywords[0] if primary_keywords else "Topic"
-        return [
-            f"The Complete Guide to {primary_keyword}",
-            f"{primary_keyword}: Everything You Need to Know",
-            f"How to Master {primary_keyword} in 2024"
-        ]
+    def rebalance_outline_word_counts(self, outline: List[BlogOutlineSection], target_words: int) -> List[BlogOutlineSection]:
+        """
+        Rebalance word count distribution across outline sections.
+        
+        Args:
+            outline: List of sections to rebalance
+            target_words: Total target word count
+            
+        Returns:
+            Outline with rebalanced word counts
+        """
+        logger.info(f"Rebalancing word counts for {len(outline)} sections, target: {target_words} words")
+        rebalanced_outline = self.outline_optimizer.rebalance_word_counts(outline, target_words)
+        logger.info(f"✅ Word count rebalancing completed")
+        return rebalanced_outline
+    
+    def get_grounding_insights(self, research_data) -> Dict[str, Any]:
+        """
+        Get grounding metadata insights for research data.
+        
+        Args:
+            research_data: Research data with grounding metadata
+            
+        Returns:
+            Dictionary containing grounding insights and analysis
+        """
+        logger.info("Extracting grounding insights from research data...")
+        insights = self.grounding_engine.extract_contextual_insights(research_data.grounding_metadata)
+        logger.info(f"✅ Extracted {len(insights)} grounding insight categories")
+        return insights
+    
+    def get_authority_sources(self, research_data) -> List[Tuple]:
+        """
+        Get high-authority sources from grounding metadata.
+        
+        Args:
+            research_data: Research data with grounding metadata
+            
+        Returns:
+            List of (chunk, authority_score) tuples sorted by authority
+        """
+        logger.info("Identifying high-authority sources from grounding metadata...")
+        authority_sources = self.grounding_engine.get_authority_sources(research_data.grounding_metadata)
+        logger.info(f"✅ Identified {len(authority_sources)} high-authority sources")
+        return authority_sources
+    
+    def get_high_confidence_insights(self, research_data) -> List[str]:
+        """
+        Get high-confidence insights from grounding metadata.
+        
+        Args:
+            research_data: Research data with grounding metadata
+            
+        Returns:
+            List of high-confidence insights
+        """
+        logger.info("Extracting high-confidence insights from grounding metadata...")
+        insights = self.grounding_engine.get_high_confidence_insights(research_data.grounding_metadata)
+        logger.info(f"✅ Extracted {len(insights)} high-confidence insights")
+        return insights
+    
+    
+    

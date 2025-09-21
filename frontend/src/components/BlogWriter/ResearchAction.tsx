@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useCopilotAction } from '@copilotkit/react-core';
 import { blogWriterApi, BlogResearchRequest, BlogResearchResponse } from '../../services/blogWriterApi';
+import { useResearchPolling } from '../../hooks/usePolling';
+import ResearchProgressModal from './ResearchProgressModal';
+import { researchCache } from '../../services/researchCache';
 
 const useCopilotActionTyped = useCopilotAction as any;
 
@@ -9,6 +12,38 @@ interface ResearchActionProps {
 }
 
 export const ResearchAction: React.FC<ResearchActionProps> = ({ onResearchComplete }) => {
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
+  const [currentMessage, setCurrentMessage] = useState<string>('');
+  const [showProgressModal, setShowProgressModal] = useState<boolean>(false);
+
+  const polling = useResearchPolling({
+    onProgress: (message) => {
+      setCurrentMessage(message);
+    },
+    onComplete: (result) => {
+      // Cache the result for future use
+      if (result && result.keywords) {
+        researchCache.cacheResult(
+          result.keywords,
+          result.industry || 'General',
+          result.target_audience || 'General',
+          result
+        );
+      }
+      
+      onResearchComplete?.(result);
+      setCurrentTaskId(null);
+      setCurrentMessage('');
+      setShowProgressModal(false);
+    },
+    onError: (error) => {
+      console.error('Research polling error:', error);
+      setCurrentTaskId(null);
+      setCurrentMessage('');
+      setShowProgressModal(false);
+    }
+  });
+
   useCopilotActionTyped({
     name: 'researchTopic',
     description: 'Research topic with keywords and persona context using Google Search grounding',
@@ -20,48 +55,43 @@ export const ResearchAction: React.FC<ResearchActionProps> = ({ onResearchComple
     ],
     handler: async ({ keywords, industry, target_audience, blogLength }: { keywords: string; industry?: string; target_audience?: string; blogLength?: string }) => {
       try {
-        // If keywords is a topic description, extract keywords from it
+        // If keywords is a topic description, preserve as single phrase unless comma-separated
         const keywordList = keywords.includes(',') 
           ? keywords.split(',').map(k => k.trim())
-          : keywords.split(' ').filter(k => k.length > 1).slice(0, 5); // Extract up to 5 meaningful words (including 2-char words like "AI")
+          : [keywords.trim()]; // Preserve single phrases as-is
         
-        const payload: BlogResearchRequest = { 
-          keywords: keywordList, 
-          industry: industry || 'General', 
-          target_audience: target_audience || 'General',
-          word_count_target: blogLength ? parseInt(blogLength) : 1000
-        };
+        const industryValue = industry || 'General';
+        const audienceValue = target_audience || 'General';
         
-        const res = await blogWriterApi.research(payload);
-        
-        // Check if research failed gracefully
-        if (!res.success) {
-          return {
-            success: false,
-            message: `❌ Research failed: ${res.error_message || 'Unknown error occurred'}. Please try again with different keywords or contact support if the problem persists.`,
-            error_details: res.error_message
+        // Check frontend cache first
+        const cachedResult = researchCache.getCachedResult(keywordList, industryValue, audienceValue);
+        if (cachedResult) {
+          console.log('Frontend cache hit - returning cached result instantly');
+          onResearchComplete?.(cachedResult);
+          return { 
+            success: true, 
+            message: `✅ Found cached research for "${keywords}"! Results loaded instantly.`,
+            cached: true
           };
         }
         
-        // Notify parent component
-        onResearchComplete?.(res);
+        const payload: BlogResearchRequest = { 
+          keywords: keywordList, 
+          industry: industryValue, 
+          target_audience: audienceValue,
+          word_count_target: blogLength ? parseInt(blogLength) : 1000
+        };
         
-        // Create detailed success message with research insights
-        const sourcesCount = res.sources?.length || 0;
-        const queriesCount = res.search_queries?.length || 0;
-        const anglesCount = res.suggested_angles?.length || 0;
+        // Start async research
+        const { task_id } = await blogWriterApi.startResearch(payload);
+        setCurrentTaskId(task_id);
+        setShowProgressModal(true);
+        polling.startPolling(task_id);
         
         return { 
           success: true, 
-          message: `🔍 Research completed for "${keywords}"! Found ${sourcesCount} sources, ${queriesCount} search queries, and ${anglesCount} content angles. The research results are now displayed in the UI. You can explore the sources, keywords, and content angles to understand the topic better before we create an outline.`,
-          research_summary: {
-            topic: keywords,
-            sources: sourcesCount,
-            queries: queriesCount,
-            angles: anglesCount,
-            primary_keywords: res.keyword_analysis?.primary || [],
-            search_intent: res.keyword_analysis?.search_intent || 'informational'
-          }
+          message: `🔍 Research started for "${keywords}"! Task ID: ${task_id}. Progress will be shown below.`,
+          task_id: task_id
         };
       } catch (error) {
         console.error(`Research failed: ${error}`);
@@ -71,49 +101,19 @@ export const ResearchAction: React.FC<ResearchActionProps> = ({ onResearchComple
         };
       }
     },
-    render: ({ status }: any) => {
-      if (status === 'inProgress' || status === 'executing') {
-        return (
-          <div style={{ 
-            padding: '16px', 
-            backgroundColor: '#f8f9fa', 
-            borderRadius: '8px',
-            border: '1px solid #e0e0e0',
-            margin: '8px 0'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-              <div style={{ 
-                width: '20px', 
-                height: '20px', 
-                border: '2px solid #1976d2',
-                borderTop: '2px solid transparent',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite'
-              }} />
-              <h4 style={{ margin: 0, color: '#1976d2' }}>🔍 Researching Your Topic</h4>
-            </div>
-            <div style={{ fontSize: '14px', color: '#666', lineHeight: '1.5' }}>
-              <p style={{ margin: '0 0 8px 0' }}>• Starting research operation...</p>
-              <p style={{ margin: '0 0 8px 0' }}>• Connecting to Google Search grounding...</p>
-              <p style={{ margin: '0 0 8px 0' }}>• Analyzing keywords and search intent...</p>
-              <p style={{ margin: '0 0 8px 0' }}>• Gathering relevant sources and statistics...</p>
-              <p style={{ margin: '0 0 8px 0' }}>• Generating content angles and search queries...</p>
-              <p style={{ margin: '0', fontStyle: 'italic', color: '#888' }}>⏳ This may take 1-3 minutes. Please wait...</p>
-            </div>
-            <style>{`
-              @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-              }
-            `}</style>
-          </div>
-        );
-      }
-      return null;
-    }
+    render: () => null
   });
 
-  return null; // This component only provides the CopilotKit action, no UI
+  return (
+    <ResearchProgressModal
+      open={showProgressModal}
+      title="Research in progress"
+      status={polling.currentStatus}
+      messages={polling.progressMessages}
+      error={polling.error}
+      onClose={() => setShowProgressModal(false)}
+    />
+  );
 };
 
 export default ResearchAction;
