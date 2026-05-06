@@ -392,7 +392,27 @@ export const podcastApi = {
     };
   },
 
-  async enhanceIdea(params: { idea: string; bible?: any }): Promise<{ enhanced_ideas: string[]; rationales: string[] }> {
+  async getWebsiteExtraction(): Promise<{ success: boolean; data?: any; error?: string }> {
+    const response = await aiApiClient.get("/api/podcast/website-extraction");
+    return response.data;
+  },
+
+  async saveWebsiteExtraction(data: any): Promise<{ success: boolean; message?: string; error?: string }> {
+    const response = await aiApiClient.post("/api/podcast/website-extraction", data);
+    return response.data;
+  },
+
+  async saveTopicContext(projectId: string, topicContext: any): Promise<{ success: boolean; message?: string; error?: string }> {
+    const response = await aiApiClient.post(`/api/podcast/project/${projectId}/topic-context`, topicContext);
+    return response.data;
+  },
+
+  async getTopicContext(projectId: string): Promise<{ success: boolean; data?: any; error?: string }> {
+    const response = await aiApiClient.get(`/api/podcast/project/${projectId}/topic-context`);
+    return response.data;
+  },
+
+  async enhanceIdea(params: { idea: string; bible?: any; website_data?: any; topic_context?: any }): Promise<{ enhanced_ideas: string[]; rationales: string[] }> {
     const response = await aiApiClient.post("/api/podcast/idea/enhance", params);
     return response.data;
   },
@@ -401,6 +421,7 @@ export const podcastApi = {
     keywords: string[];
     timeframe?: string;
     geo?: string;
+    source?: string;
   }): Promise<{
     success: boolean;
     data?: {
@@ -411,6 +432,7 @@ export const podcastApi = {
       timeframe: string;
       geo: string;
       keywords: string[];
+      source: string;
       cached: boolean;
     };
     error?: string;
@@ -419,6 +441,33 @@ export const podcastApi = {
       keywords: params.keywords,
       timeframe: params.timeframe || "today 12-m",
       geo: params.geo || "US",
+      source: params.source || "web",  // 'web' = Google, 'podcast' = YouTube
+    });
+    return response.data;
+  },
+
+  async extractUrl(params: { url: string }): Promise<{
+    success: boolean;
+    title?: string;
+    text?: string;
+    summary?: string;
+    highlights?: string[];
+    author?: string;
+    url: string;
+    image?: string;
+    favicon?: string;
+    subpages?: Array<{id: string; title: string; url: string; summary: string; text: string}>;
+    error?: string;
+  }> {
+    const response = await aiApiClient.post("/api/podcast/extract-url", params);
+    return response.data;
+  },
+
+  async transcribeAudio(audioBlob: Blob): Promise<{ text: string; error?: string }> {
+    const formData = new FormData();
+    formData.append("audio", audioBlob, `recording_${Date.now()}.webm`);
+    const response = await aiApiClient.post("/api/podcast/transcribe", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
     });
     return response.data;
   },
@@ -1085,14 +1134,101 @@ export const podcastApi = {
     return response.data;
   },
 
-  async generateChartPreview(params: {
+async generateChartPreview(params: {
     chart_data: Record<string, any>;
     chart_type: string;
     title: string;
   }): Promise<{ preview_url: string; chart_id: string }> {
-    // Canonical backend endpoint from api/podcast/handlers/broll.py after router prefix composition:
-    // /api/podcast (main router) + /broll (handler prefix) + /preview/chart (endpoint)
     const response = await aiApiClient.post('/api/podcast/broll/preview/chart', params);
+    return response.data;
+  },
+
+  async researchByCategory(params: {
+    category: "news" | "finance" | "research-paper" | "personal-site";
+    keyword?: string;
+    maxResults?: number;
+    websiteUrl?: string;
+  }): Promise<{
+    success: boolean;
+    category: string;
+    provider: string;
+    topics: Array<{
+      title: string;
+      url: string;
+      snippet: string;
+      score: number;
+      favicon?: string;
+    }>;
+    query?: string;
+    error?: string;
+  }> {
+    const response = await aiApiClient.post('/api/podcast/research/tavily-category', {
+      category: params.category,
+      keyword: params.keyword,
+      max_results: params.maxResults,
+      website_url: params.websiteUrl,
+    });
+return response.data;
+  },
+
+  async preEstimateCost(params: {
+    duration: number;
+    speakers: number;
+    queryCount: number;
+    podcastMode: string;
+    gemini_model?: string;
+    audio_tts_model?: string;
+    voice_clone_engine?: string;
+    image_model?: string;
+    video_model?: string;
+  }): Promise<{
+    estimate?: {
+      // Individual costs
+      analysisCost: number;
+      researchCost: number;
+      researchSearchCost: number;
+      researchLlmCost: number;
+      scriptCost: number;
+      ttsCost: number;
+      voiceCloneCost: number;
+      avatarCost: number;
+      videoCost: number;
+      total: number;
+      // Category totals
+      llmCost: number;
+      audioCost: number;
+      mediaCost: number;
+      // Metadata
+      currency: string;
+      source: string;
+      models: {
+        llm: string;
+        research: string;
+        audio_tts: string;
+        voice_clone: string;
+        image: string;
+        video: string;
+      };
+      assumptions: Record<string, number>;
+    } | null;
+    error?: string | null;
+    pricing_available?: boolean;
+    debug?: {
+      pricing_rows: number;
+      providers: string[];
+    };
+  }> {
+    const response = await aiApiClient.post('/api/podcast/pre-estimate', {
+      duration: params.duration,
+      speakers: params.speakers,
+      query_count: params.queryCount,
+      podcast_mode: params.podcastMode,
+      gemini_model: params.gemini_model,
+      audio_tts_model: params.audio_tts_model,
+      voice_clone_engine: params.voice_clone_engine,
+      image_model: params.image_model,
+      video_model: params.video_model,
+    });
     return response.data;
   },
 };

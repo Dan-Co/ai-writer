@@ -153,6 +153,7 @@ export interface GoogleTrendsData {
   timeframe: string;
   geo: string;
   keywords: string[];
+  source?: string;
   timestamp: string;
   cached?: boolean;
   error?: string;

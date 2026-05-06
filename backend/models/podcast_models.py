@@ -45,6 +45,9 @@ class PodcastProject(Base):
     knobs = Column(JSON, nullable=True)  # Knobs settings
     research_provider = Column(String(50), nullable=True, default="google")  # Research provider
     
+    # Project-specific topic context (category research, selected topics)
+    topic_context = Column(JSON, nullable=True)  # { category: "news"|"finance", topics: [...], selected_topic: {...} }
+    
     # UI state
     show_script_editor = Column(Boolean, default=False)
     show_render_queue = Column(Boolean, default=False)

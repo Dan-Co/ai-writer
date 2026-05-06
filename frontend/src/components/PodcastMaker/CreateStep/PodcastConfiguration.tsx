@@ -57,14 +57,14 @@ export const PodcastConfiguration: React.FC<PodcastConfigurationProps> = ({
       sx={{
         flex: { xs: "1 1 auto", lg: "0 0 320px" },
         width: { xs: "100%", lg: "320px" },
-        p: 3,
         borderRadius: 3,
         background: "#ffffff",
-        border: "1px solid rgba(102, 126, 234, 0.15)",
+        border: "1px solid",
+        borderColor: "#e2e8f0",
         height: "100%",
         display: "flex",
         flexDirection: "column",
-        boxShadow: "0 4px 20px rgba(102, 126, 234, 0.08)",
+        boxShadow: "0 8px 30px rgba(15, 23, 42, 0.12)",
         position: "relative",
         overflow: "hidden",
         "&::before": {
@@ -78,49 +78,47 @@ export const PodcastConfiguration: React.FC<PodcastConfigurationProps> = ({
         },
       }}
     >
-      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2.5 }}>
+      {/* Header with gradient background */}
+      <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 2, px: 3, pt: 3, pb: 2, background: "linear-gradient(180deg, #eff6ff 0%, #f0f9ff 60%, #ffffff 100%)", borderBottom: "1px solid #e0e7ff" }}>
         <Box
           sx={{
-            width: 24,
-            height: 24,
+            width: 28,
+            height: 28,
             borderRadius: "50%",
             background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            boxShadow: "0 2px 8px rgba(102, 126, 234, 0.25)",
+            boxShadow: "0 2px 8px rgba(102, 126, 234, 0.3), inset 0 1px 0 rgba(255,255,255,0.2)",
           }}
         >
           <Typography sx={{ color: "#fff", fontSize: "0.75rem", fontWeight: 700 }}>2</Typography>
         </Box>
         <Box
           sx={{
-            width: 32,
-            height: 32,
-            borderRadius: 1.5,
-            background: "linear-gradient(135deg, rgba(102, 126, 234, 0.12) 0%, rgba(118, 75, 162, 0.12) 100%)",
+            width: 40,
+            height: 40,
+            borderRadius: 2,
+            background: "linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            boxShadow: "0 2px 8px rgba(102, 126, 234, 0.15)",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.5)",
           }}
         >
-          <SettingsIcon sx={{ color: "#667eea", fontSize: "1rem" }} />
+          <SettingsIcon sx={{ color: "#6366f1", fontSize: "1.1rem" }} />
         </Box>
-        <Typography 
-          variant="subtitle1" 
-          sx={{ 
-            color: "#0f172a", 
-            fontWeight: 700, 
-            fontSize: "1rem",
-            letterSpacing: "-0.01em",
-          }}
-        >
-          Basic Configuration
-        </Typography>
+        <Box>
+          <Typography variant="subtitle1" sx={{ color: "#0f172a", fontWeight: 700, fontSize: "1rem", letterSpacing: "-0.01em" }}>
+            Basic Configuration
+          </Typography>
+          <Typography variant="caption" sx={{ color: "#64748b", fontSize: "0.75rem", display: "block", mt: -0.25 }}>
+            Set duration, speakers, and podcast mode
+          </Typography>
+        </Box>
       </Stack>
       
-      <Stack spacing={3}>
+      <Stack spacing={3} sx={{ p: 3, pt: 2 }}>
         {/* Podcast Mode */}
         <Box>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>

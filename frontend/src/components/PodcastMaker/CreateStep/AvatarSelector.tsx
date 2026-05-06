@@ -102,80 +102,76 @@ export const AvatarSelector: React.FC<AvatarSelectorProps> = ({
       sx={{
         flex: 1,
         minWidth: 0,
-        p: { xs: 1.5, sm: 2.5 },
-        borderRadius: 2,
+        borderRadius: 3,
         background: "#ffffff",
-        border: "1px solid rgba(15, 23, 42, 0.08)",
-        boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+        border: "1px solid",
+        borderColor: "#e2e8f0",
+        boxShadow: "0 8px 30px rgba(15, 23, 42, 0.12)",
+        position: "relative",
+        overflow: "hidden",
+        "&::before": {
+          content: '""',
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: "3px",
+          background: "linear-gradient(90deg, #667eea 0%, #764ba2 50%, #667eea 100%)",
+        },
       }}
     >
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 1, sm: 1.5 }} alignItems={{ xs: "flex-start", sm: "center" }} sx={{ mb: 2 }}>
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Box
-            sx={{
-              width: 24,
-              height: 24,
-              borderRadius: "50%",
-              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 2px 8px rgba(102, 126, 234, 0.25)",
-            }}
-          >
-            <Typography sx={{ color: "#fff", fontSize: "0.75rem", fontWeight: 700 }}>3</Typography>
-          </Box>
-          <Box
-            sx={{
-              width: 36,
-              height: 36,
-              borderRadius: 1.5,
-              background: "linear-gradient(135deg, rgba(102, 126, 234, 0.12) 0%, rgba(118, 75, 162, 0.12) 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            <PersonIcon fontSize="small" sx={{ color: "#667eea" }} />
-          </Box>
-          <Typography variant="subtitle2" sx={{ color: "#0f172a", fontWeight: 600, fontSize: "0.9375rem" }}>
-            Podcast Presenter Avatar
-          </Typography>
-        </Stack>
-        <Tooltip
-          title={
+      {/* Header with Tabs */}
+      <Box sx={{ px: 2.5, pt: 2.5, pb: 1.5, background: "linear-gradient(180deg, #eff6ff 0%, #f0f9ff 60%, #ffffff 100%)", borderBottom: "1px solid #e0e7ff" }}>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 1.5, sm: 1.5 }} alignItems={{ xs: "flex-start", sm: "center" }} justifyContent="space-between">
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 2px 8px rgba(102, 126, 234, 0.3), inset 0 1px 0 rgba(255,255,255,0.2)",
+              }}
+            >
+              <Typography sx={{ color: "#fff", fontSize: "0.75rem", fontWeight: 700 }}>3</Typography>
+            </Box>
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: 2,
+                background: "linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.5)",
+              }}
+            >
+              <PersonIcon fontSize="medium" sx={{ color: "#6366f1" }} />
+            </Box>
             <Box>
-              <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
-                Avatar Options:
+              <Typography variant="subtitle1" sx={{ color: "#0f172a", fontWeight: 700, fontSize: "1rem", letterSpacing: "-0.01em" }}>
+                Podcast Presenter Avatar
               </Typography>
-              <Typography variant="body2" component="div" sx={{ fontSize: "0.875rem", lineHeight: 1.6 }}>
-                <strong>Brand Avatar:</strong> Use your configured brand avatar for consistency.<br/><br/>
-                <strong>Asset Library:</strong> Choose from your previously uploaded images.<br/><br/>
-                <strong>Take a Selfie:</strong> Use your camera to capture a photo instantly for your podcast presenter.<br/><br/>
-                <strong>Upload your photo:</strong> We'll enhance it into a professional podcast presenter using AI.
+              <Typography variant="caption" sx={{ color: "#64748b", fontSize: "0.75rem", display: "block", mt: -0.25 }}>
+                Select or upload an image for your presenter
               </Typography>
             </Box>
-          }
-          arrow
-          placement="top"
-        >
-          <InfoIcon fontSize="small" sx={{ color: "#94a3b8", cursor: "help", ml: { xs: 0, sm: 0 } }} />
-        </Tooltip>
-      </Stack>
-      
-      <Stack direction={{ xs: "column", lg: "row" }} spacing={3} alignItems="flex-start">
-        {/* Left Side: Tabs & Content */}
-        <Box sx={{ flex: 1, width: "100%" }}>
+          </Stack>
+          
+          {/* Tabs in header - Mobile Responsive */}
           <Tabs 
             value={avatarTab} 
             onChange={setAvatarTab}
             variant="scrollable"
-            scrollButtons={isMobile ? "auto" : false}
-            allowScrollButtonsMobile={isMobile}
+            scrollButtons="auto"
+            allowScrollButtonsMobile
             sx={{ 
-              mb: { xs: 2, sm: 3 },
-              minHeight: { xs: 36, sm: 48 },
+              minHeight: { xs: 32, sm: 38 },
               "& .MuiTabs-scrollButtons": {
                 color: "#64748b",
                 "&.Mui-disabled": { opacity: 0.3 },
@@ -184,30 +180,30 @@ export const AvatarSelector: React.FC<AvatarSelectorProps> = ({
                 display: "none",
               },
               "& .MuiTabs-flexContainer": {
-                gap: { xs: 0.5, sm: 1.5 },
+                gap: 0.5,
               },
               "& .MuiTab-root": {
                 textTransform: "none",
-                minHeight: { xs: 32, sm: 44 },
+                minHeight: { xs: 28, sm: 36 },
                 fontWeight: 600,
-                fontSize: { xs: "0.7rem", sm: "0.875rem" },
-                borderRadius: { xs: "6px", sm: "12px" },
-                px: { xs: 1, sm: 2.5 },
-                minWidth: { xs: "auto", sm: 0 },
+                fontSize: { xs: "0.65rem", sm: "0.8rem" },
+                borderRadius: 1,
+                px: { xs: 1, sm: 1.5 },
+                py: 0.5,
+                minWidth: "auto",
                 color: "#64748b",
-                border: "1.5px solid #e2e8f0",
-                transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                border: "1px solid #e2e8f0",
                 backgroundColor: "#ffffff",
+                transition: "all 0.2s ease",
                 "&:hover": {
-                  borderColor: "#cbd5e1",
-                  backgroundColor: "#f8fafc",
-                  transform: { xs: "none", sm: "translateY(-1px)" },
+                  borderColor: "#c7d2fe",
+                  backgroundColor: "#eef2ff",
                 },
                 "&.Mui-selected": {
                   color: "#ffffff",
                   borderColor: "transparent",
-                  background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                  boxShadow: "0 4px 12px rgba(102, 126, 234, 0.25)",
+                  background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
+                  boxShadow: "0 2px 8px rgba(99, 102, 241, 0.3)",
                 },
               },
             }}
@@ -216,6 +212,33 @@ export const AvatarSelector: React.FC<AvatarSelectorProps> = ({
               <Tab key={index} label={label} />
             ))}
           </Tabs>
+          
+          <Tooltip
+            title={
+              <Box sx={{ p: 1 }}>
+                <Typography variant="body2" sx={{ fontWeight: 600, mb: 1, color: "#fff" }}>
+                  Avatar Options:
+                </Typography>
+                <Typography variant="caption" component="div" sx={{ lineHeight: 1.6, color: "#e5e7eb" }}>
+                  <strong>Brand Avatar:</strong> Use your configured brand avatar for consistency.<br/>
+                  <strong>Asset Library:</strong> Choose from your previously uploaded images.<br/>
+                  <strong>Take a Selfie:</strong> Use your camera to capture a photo instantly.<br/>
+                  <strong>Upload your photo:</strong> We'll enhance it into a professional presenter.
+                </Typography>
+              </Box>
+            }
+            arrow
+            placement="top"
+          >
+            <InfoIcon fontSize="small" sx={{ color: "#94a3b8", cursor: "help" }} />
+          </Tooltip>
+        </Stack>
+      </Box>
+      
+      {/* Content Area */}
+      <Stack direction={{ xs: "column", lg: "row" }} spacing={3} alignItems="flex-start" sx={{ p: 2.5 }}>
+        {/* Left Side: Content based on selected tab */}
+        <Box sx={{ flex: 1, width: "100%" }}>
 
           {avatarTab === 0 && (
             <Stack spacing={2}>

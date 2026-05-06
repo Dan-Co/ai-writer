@@ -494,7 +494,16 @@ class PricingService:
                 logger.debug(f"Added new pricing for {pricing_data['provider'].value}:{pricing_data['model_name']}")
         
         self.db.commit()
-        logger.info("Default API pricing initialized/updated. HuggingFace pricing loaded from env vars if available.")
+        
+        # Debug: count pricing rows seeded
+        total_rows = self.db.query(APIProviderPricing).count()
+        providers = self.db.query(APIProviderPricing.provider).distinct().all()
+        provider_list = sorted([p[0].value for p in providers]) if providers else []
+        logger.info(f"[PRICING_INIT] Default API pricing initialized: {len(all_pricing)} rows configured, {total_rows} rows in DB, providers: {provider_list}")
+        
+        # Warning-level log that will be visible
+        logger.warning(f"[PRICING_INIT] Pricing ready: {total_rows} rows for {len(provider_list)} providers")
+        logger.warning("Default API pricing initialized/updated. HuggingFace pricing loaded from env vars if available.")
     
     def initialize_default_plans(self):
         """Initialize default subscription plans."""

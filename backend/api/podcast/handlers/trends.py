@@ -18,6 +18,7 @@ class PodcastTrendsRequest(BaseModel):
     keywords: List[str] = Field(..., min_length=1, max_length=5, description="1-5 keywords to analyze")
     timeframe: str = Field(default="today 12-m", description="Timeframe: 'today 3-m', 'today 12-m', 'today 5-y', 'all'")
     geo: str = Field(default="US", description="Country code: 'US', 'GB', 'IN', etc.")
+    source: str = Field(default="web", description="Data source: 'web' (Google), 'podcast' (YouTube)")
 
 
 class PodcastTrendsResponse(BaseModel):
@@ -47,12 +48,39 @@ async def get_podcast_trends(
 
     try:
         service = GoogleTrendsService()
+        # Map 'source' to 'gprop' - 'podcast' uses YouTube for video/podcast relevance
+        gprop_map = {"": "", "web": "", "podcast": "youtube", "news": "news", "images": "images", "shopping": "froogle"}
+        gprop = gprop_map.get(request.source, "")
+        
         result = await service.analyze_trends(
             keywords=request.keywords,
             timeframe=request.timeframe,
             geo=request.geo,
+            gprop=gprop,
             user_id=user_id,
         )
+
+        has_error = result.get("error")
+        has_data = (
+            len(result.get("interest_over_time", [])) > 0
+            or len(result.get("interest_by_region", [])) > 0
+            or len(result.get("related_topics", {}).get("top", [])) > 0
+            or len(result.get("related_topics", {}).get("rising", [])) > 0
+            or len(result.get("related_queries", {}).get("top", [])) > 0
+            or len(result.get("related_queries", {}).get("rising", [])) > 0
+        )
+
+        # Return error if: has error OR no data (meaning blocked/empty)
+        if has_error and not has_data:
+            error_msg = result.get("error", "")
+            logger.warning(f"[Trends] No data or error: {error_msg[:100]}")
+            return PodcastTrendsResponse(success=False, data=result, error=error_msg or "No trends data available. Google may be blocking requests.")
+
+        # Even if no error but empty data - return error
+        if not has_data:
+            logger.warning("[Trends] Empty data returned")
+            return PodcastTrendsResponse(success=False, data=result, error="No trends data available. Please try different keywords.")
+
         return PodcastTrendsResponse(success=True, data=result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

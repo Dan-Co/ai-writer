@@ -67,10 +67,11 @@ import sys
 from pathlib import Path
 import google.genai as genai
 from google.genai import types
-
+from dotenv import load_dotenv
 
 from loguru import logger
 from utils.logger_utils import get_service_logger
+from services.api_key_manager import APIKeyManager
 
 # Use service-specific logger to avoid conflicts
 logger = get_service_logger("gemini_audio_text")

@@ -80,6 +80,14 @@ class PodcastEnhanceIdeaRequest(BaseModel):
     """Request model for enhancing a podcast idea with AI."""
     idea: str = Field(..., description="The raw podcast idea or keywords")
     bible: Optional[Dict[str, Any]] = Field(None, description="Optional Podcast Bible for context")
+    website_data: Optional[Dict[str, Any]] = Field(
+        None, 
+        description="Optional website extraction data for enriched context (title, summary, highlights, subpages, url)"
+    )
+    topic_context: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional category research context (category, topics, selected_topic)"
+    )
 
 
 class PodcastEnhanceIdeaResponse(BaseModel):
@@ -470,3 +478,59 @@ class VoiceCloneResult(BaseModel):
     file_size: int
     task_id: str
     status: str = "completed"
+
+
+class ExtractUrlRequest(BaseModel):
+    """Request to extract content from a URL using Exa."""
+    url: str = Field(..., description="URL to extract content from")
+
+
+class ExtractUrlResponse(BaseModel):
+    """Response with extracted content from URL."""
+    success: bool
+    title: Optional[str] = None
+    text: Optional[str] = None
+    summary: Optional[str] = None
+    author: Optional[str] = None
+    highlights: Optional[List[str]] = Field(default_factory=list, description="Key highlights from the content")
+    url: str
+    image: Optional[str] = None
+    favicon: Optional[str] = None
+    subpages: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Subpages with their own content")
+    error: Optional[str] = None
+
+
+class WebsiteAnalysisRequest(BaseModel):
+    """Request to save user's website analysis."""
+    website_url: str = Field(..., description="The website URL")
+    exa_content: Dict[str, Any] = Field(default_factory=dict, description="Exa extracted content")
+
+
+class WebsiteAnalysisResponse(BaseModel):
+    """Response for website analysis."""
+    success: bool
+    website_url: Optional[str] = None
+    message: Optional[str] = None
+    error: Optional[str] = None
+
+
+class PodcastPreEstimateRequest(BaseModel):
+    """Request model for pre-analysis cost estimate."""
+    duration: int = Field(default=10, description="Target duration in minutes")
+    speakers: int = Field(default=1, description="Number of speakers")
+    query_count: int = Field(default=3, description="Number of research queries")
+    podcast_mode: str = Field(default="audio_video", description="Podcast mode: audio_only, video_only, or audio_video")
+    # Optional model overrides for cost estimation
+    gemini_model: Optional[str] = Field(default=None, description="LLM model: gemini-2.5-flash, gemini-1.5-flash, etc.")
+    audio_tts_model: Optional[str] = Field(default=None, description="Audio TTS model: minimax/speech-02-hd")
+    voice_clone_engine: Optional[str] = Field(default=None, description="Voice clone engine: qwen3, cosyvoice, minimax")
+    image_model: Optional[str] = Field(default=None, description="Image model: qwen-image, ideogram-v3-turbo")
+    video_model: Optional[str] = Field(default=None, description="Video model: wan-2.5, kling-v2.5-turbo-std-5s, wavespeed-ai/infinitetalk")
+
+
+class PodcastPreEstimateResponse(BaseModel):
+    """Response model for pre-analysis cost estimate."""
+    estimate: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    pricing_available: bool = Field(default=False, description="Whether pricing data is available in DB")
+    debug: Optional[Dict[str, Any]] = Field(default=None, description="Debug info: pricing rows count, providers")

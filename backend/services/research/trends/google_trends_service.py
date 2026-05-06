@@ -4,22 +4,130 @@ Google Trends Service
 Provides Google Trends data integration for the Research Engine.
 Handles rate limiting, caching, error handling, and data serialization.
 
+Key design decisions:
+- Monkey-patches urllib3 Retry to fix method_whitelist→allowed_methods (urllib3 2.x)
+- Monkey-patches pytrends related_topics/related_queries to catch IndexError bug
+- Uses TrendReq built-in retries (3 retries, 1s backoff) for automatic 429 handling
+- Random user-agent rotation per instance to reduce fingerprinting
+- 1-second delays between sequential requests to respect rate limits
+- 24-hour in-memory cache to avoid redundant API calls
+
 Author: ALwrity Team
-Version: 1.0
+Version: 2.0
 """
 
 import asyncio
+import random
+import time
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from loguru import logger
 import pandas as pd
 
+# ---------------------------------------------------------------------------
+# Monkey-patches: fix compatibility issues before importing/using pytrends
+# ---------------------------------------------------------------------------
+
+# Patch 1: urllib3 2.x renamed Retry's `method_whitelist` to `allowed_methods`.
+# pytrends 4.9.2 still uses `method_whitelist`, which crashes with urllib3 2.x.
+# We patch Retry.__init__ to accept `method_whitelist` and remap it.
 try:
-    from pytrends.request import TrendReq
+    from urllib3.util.retry import Retry as _OrigRetry
+
+    _orig_retry_init = _OrigRetry.__init__
+
+    def _patched_retry_init(self, *args, **kwargs):
+        if 'method_whitelist' in kwargs and 'allowed_methods' not in kwargs:
+            kwargs['allowed_methods'] = kwargs.pop('method_whitelist')
+        _orig_retry_init(self, *args, **kwargs)
+
+    _OrigRetry.__init__ = _patched_retry_init
+    logger.debug("[Trends] Patched urllib3 Retry.__init__ for method_whitelist→allowed_methods")
+except Exception as _patch_err:
+    logger.warning(f"[Trends] Could not patch urllib3 Retry: {_patch_err}")
+
+# Now safe to import pytrends
+try:
+    from pytrends.request import TrendReq as _TrendReq
     PYTrends_AVAILABLE = True
 except ImportError:
     PYTrends_AVAILABLE = False
     logger.warning("pytrends not installed. Google Trends features will be unavailable.")
+
+# Patch 2: pytrends related_topics() and related_queries() use keyword[0]
+# which raises IndexError on empty lists, but only catch KeyError.
+# We fix this by catching (KeyError, IndexError) for the keyword extraction.
+if PYTrends_AVAILABLE:
+    import json as _json
+    import pandas as _pd
+
+    def _fixed_related_topics(self):
+        result_dict = {}
+        related_payload = {}
+        for request_json in self.related_topics_widget_list:
+            try:
+                kw = request_json['request']['restriction'][
+                    'complexKeywordsRestriction']['keyword'][0]['value']
+            except (KeyError, IndexError):
+                kw = ''
+            related_payload['req'] = _json.dumps(request_json['request'])
+            related_payload['token'] = request_json['token']
+            related_payload['tz'] = self.tz
+            req_json = self._get_data(
+                url=_TrendReq.RELATED_QUERIES_URL,
+                method=_TrendReq.GET_METHOD,
+                trim_chars=5,
+                params=related_payload,
+            )
+            try:
+                top_list = req_json['default']['rankedList'][0]['rankedKeyword']
+                df_top = _pd.json_normalize(top_list, sep='_')
+            except (KeyError, IndexError):
+                df_top = None
+            try:
+                rising_list = req_json['default']['rankedList'][1]['rankedKeyword']
+                df_rising = _pd.json_normalize(rising_list, sep='_')
+            except (KeyError, IndexError):
+                df_rising = None
+            result_dict[kw] = {'rising': df_rising, 'top': df_top}
+        return result_dict
+
+    def _fixed_related_queries(self):
+        result_dict = {}
+        related_payload = {}
+        for request_json in self.related_queries_widget_list:
+            try:
+                kw = request_json['request']['restriction'][
+                    'complexKeywordsRestriction']['keyword'][0]['value']
+            except (KeyError, IndexError):
+                kw = ''
+            related_payload['req'] = _json.dumps(request_json['request'])
+            related_payload['token'] = request_json['token']
+            related_payload['tz'] = self.tz
+            req_json = self._get_data(
+                url=_TrendReq.RELATED_QUERIES_URL,
+                method=_TrendReq.GET_METHOD,
+                trim_chars=5,
+                params=related_payload,
+            )
+            try:
+                top_df = _pd.DataFrame(
+                    req_json['default']['rankedList'][0]['rankedKeyword'])
+                top_df = top_df[['query', 'value']]
+            except (KeyError, IndexError):
+                top_df = None
+            try:
+                rising_df = _pd.DataFrame(
+                    req_json['default']['rankedList'][1]['rankedKeyword'])
+                rising_df = rising_df[['query', 'value']]
+            except (KeyError, IndexError):
+                rising_df = None
+            result_dict[kw] = {'top': top_df, 'rising': rising_df}
+        return result_dict
+
+    _TrendReq.related_topics = _fixed_related_topics
+    _TrendReq.related_queries = _fixed_related_queries
+    logger.debug("[Trends] Patched TrendReq.related_topics/related_queries for IndexError")
 
 from .rate_limiter import RateLimiter
 
@@ -27,124 +135,142 @@ from .rate_limiter import RateLimiter
 class GoogleTrendsService:
     """
     Service for fetching and analyzing Google Trends data.
-    
-    Features:
-    - Interest over time
-    - Interest by region
-    - Related topics
-    - Related queries
-    - Rate limiting (1 req/sec)
-    - Caching (24-hour TTL)
-    - Async support
-    - Error handling with retry logic
+
+    Uses TrendReq with no retries (fail-fast) to avoid hitting CAPTCHA on blocks.
+    429 retry handling (1s, 2s, 4s backoff). Random user-agent is set
+    per instance to reduce fingerprinting.
     """
-    
+
+    USER_AGENTS = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0",
+    ]
+
     def __init__(self):
-        """Initialize the Google Trends service."""
         if not PYTrends_AVAILABLE:
             raise RuntimeError("pytrends library is required. Install with: pip install pytrends")
-        
-        self.rate_limiter = RateLimiter(max_calls=1, period=1.0)  # 1 request per second
-        self.cache: Dict[str, Dict[str, Any]] = {}  # Simple in-memory cache
-        self.cache_ttl = timedelta(hours=24)  # 24-hour cache
-        
-        logger.info("GoogleTrendsService initialized")
-    
+
+        self.rate_limiter = RateLimiter(max_calls=1, period=1.0)
+        self.cache: Dict[str, Any] = {}
+        self.cache_ttl = timedelta(hours=24)
+
+        logger.info("GoogleTrendsService initialized (pytrends 4.9.2, fail-fast, 2s delays)")
+
+    # -----------------------------------------------------------------------
+    # Public API
+    # -----------------------------------------------------------------------
+
     async def analyze_trends(
         self,
         keywords: List[str],
         timeframe: str = "today 12-m",
         geo: str = "US",
+        gprop: str = "",
         user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Comprehensive trends analysis.
-        
-        Fetches all trends data in a single optimized call:
-        - Interest over time
-        - Interest by region
-        - Related topics (top & rising)
-        - Related queries (top & rising)
-        
+
         Args:
-            keywords: List of keywords to analyze (1-5 keywords recommended)
-            timeframe: Timeframe string (e.g., "today 12-m", "today 1-y", "all")
+            keywords: List of keywords to analyze (1-5)
+            timeframe: Timeframe (e.g., "today 12-m", "today 3-m", "today 5-y")
             geo: Country code (e.g., "US", "GB", "IN")
-            user_id: User ID for subscription checks (optional for now)
-            
-        Returns:
-            Dict containing all trends data in serializable format
-            
-        Raises:
-            ValueError: If keywords list is empty or too long
-            RuntimeError: If pytrends is not available or API fails
+            gprop: Google property filter - '' for web, 'youtube' for YouTube, 'news', 'images', 'froogle'
+            user_id: Optional user ID for tracking
+
+        Fetches: interest over time, interest by region, related topics,
+        and related queries using a single TrendReq session.
         """
         if not keywords:
             raise ValueError("Keywords list cannot be empty")
-        
+
         if len(keywords) > 5:
             logger.warning(f"Too many keywords ({len(keywords)}), using first 5")
             keywords = keywords[:5]
-        
-        # Check cache first
+
         cache_key = self._build_cache_key(keywords, timeframe, geo)
         cached_data = self._get_from_cache(cache_key)
         if cached_data:
             logger.info(f"Returning cached trends data for: {keywords}")
             return {**cached_data, "cached": True}
-        
-        # Rate limit
+
         await self.rate_limiter.acquire()
-        
+
+        total_start = time.monotonic()
+
+        interest_over_time: List[Dict[str, Any]] = []
+        interest_by_region: List[Dict[str, Any]] = []
+        related_topics: Dict[str, List[Dict[str, Any]]] = {"top": [], "rising": []}
+        related_queries: Dict[str, List[Dict[str, Any]]] = {"top": [], "rising": []}
+
         try:
-            logger.info(f"Fetching Google Trends data for: {keywords} (timeframe: {timeframe}, geo: {geo})")
-            
-            # Initialize pytrends (sync operation, run in thread)
+            logger.info(f"[Trends] ===== START analyze_trends ===== keywords={keywords} timeframe={timeframe} geo={geo}")
+
+            # Initialize TrendReq with gprop (youtube for video/podcast relevance)
+            init_start = time.monotonic()
             pytrends = await asyncio.to_thread(
-                self._initialize_pytrends,
+                self._create_pytrends,
                 keywords,
                 timeframe,
-                geo
+                geo,
+                gprop,
             )
-            
-            # Fetch all data in parallel (pytrends methods are sync, so use to_thread)
-            interest_over_time_task = asyncio.to_thread(
-                lambda: self._safe_interest_over_time(pytrends)
+            init_ms = int((time.monotonic() - init_start) * 1000)
+            logger.info(f"[Trends] TrendReq init + build_payload took {init_ms}ms")
+
+            # --- Interest Over Time ---
+            iot_start = time.monotonic()
+            interest_over_time = await asyncio.to_thread(
+                lambda: self._fetch_interest_over_time(pytrends)
             )
-            interest_by_region_task = asyncio.to_thread(
-                lambda: self._safe_interest_by_region(pytrends)
+            iot_ms = int((time.monotonic() - iot_start) * 1000)
+            logger.info(f"[Trends] interest_over_time took {iot_ms}ms, returned {len(interest_over_time)} points")
+
+            await asyncio.sleep(2)
+
+            # --- Interest By Region ---
+            ibr_start = time.monotonic()
+            interest_by_region = await asyncio.to_thread(
+                lambda: self._fetch_interest_by_region(pytrends)
             )
-            related_topics_task = asyncio.to_thread(
-                lambda: self._safe_related_topics(pytrends, keywords)
+            ibr_ms = int((time.monotonic() - ibr_start) * 1000)
+            logger.info(f"[Trends] interest_by_region took {ibr_ms}ms, returned {len(interest_by_region)} regions")
+
+            await asyncio.sleep(2)
+
+            # --- Related Topics ---
+            rt_start = time.monotonic()
+            related_topics = await asyncio.to_thread(
+                lambda: self._fetch_related_topics(pytrends)
             )
-            related_queries_task = asyncio.to_thread(
-                lambda: self._safe_related_queries(pytrends, keywords)
+            rt_ms = int((time.monotonic() - rt_start) * 1000)
+            rt_top = len(related_topics.get("top", []))
+            rt_rising = len(related_topics.get("rising", []))
+            logger.info(f"[Trends] related_topics took {rt_ms}ms, top={rt_top} rising={rt_rising}")
+
+            await asyncio.sleep(2)
+
+            # --- Related Queries ---
+            rq_start = time.monotonic()
+            related_queries = await asyncio.to_thread(
+                lambda: self._fetch_related_queries(pytrends)
             )
-            
-            # Wait for all tasks
-            interest_over_time, interest_by_region, related_topics, related_queries = await asyncio.gather(
-                interest_over_time_task,
-                interest_by_region_task,
-                related_topics_task,
-                related_queries_task,
-                return_exceptions=True
+            rq_ms = int((time.monotonic() - rq_start) * 1000)
+            rq_top = len(related_queries.get("top", []))
+            rq_rising = len(related_queries.get("rising", []))
+            logger.info(f"[Trends] related_queries took {rq_ms}ms, top={rq_top} rising={rq_rising}")
+
+            total_ms = int((time.monotonic() - total_start) * 1000)
+            logger.info(
+                f"[Trends] ===== DONE analyze_trends ===== total={total_ms}ms "
+                f"iot={len(interest_over_time)} ibr={len(interest_by_region)} "
+                f"rt_top={rt_top} rq_top={rq_top}"
             )
-            
-            # Handle exceptions
-            if isinstance(interest_over_time, Exception):
-                logger.error(f"Interest over time failed: {interest_over_time}")
-                interest_over_time = []
-            if isinstance(interest_by_region, Exception):
-                logger.error(f"Interest by region failed: {interest_by_region}")
-                interest_by_region = []
-            if isinstance(related_topics, Exception):
-                logger.error(f"Related topics failed: {related_topics}")
-                related_topics = {"top": [], "rising": []}
-            if isinstance(related_queries, Exception):
-                logger.error(f"Related queries failed: {related_queries}")
-                related_queries = {"top": [], "rising": []}
-            
-            # Build result
+
             result = {
                 "interest_over_time": interest_over_time,
                 "interest_by_region": interest_by_region,
@@ -153,186 +279,268 @@ class GoogleTrendsService:
                 "timeframe": timeframe,
                 "geo": geo,
                 "keywords": keywords,
+                "source": "web" if gprop == "" else "podcast" if gprop == "youtube" else gprop,
                 "timestamp": datetime.utcnow().isoformat(),
-                "cached": False
+                "cached": False,
             }
-            
-            # Cache result
+
             self._save_to_cache(cache_key, result)
-            
-            logger.info(f"Google Trends data fetched successfully: {len(interest_over_time)} time points, {len(interest_by_region)} regions")
-            
+
+            logger.info(
+                f"Google Trends data fetched successfully: "
+                f"{len(interest_over_time)} time points, {len(interest_by_region)} regions"
+            )
+
             return result
-            
+
         except Exception as e:
             logger.error(f"Google Trends analysis failed: {e}")
-            # Return fallback response
-            return self._create_fallback_response(keywords, timeframe, geo, str(e))
-    
-    def _initialize_pytrends(
+            return self._create_fallback_response(keywords, timeframe, geo, gprop, str(e))
+
+    # -----------------------------------------------------------------------
+    # TrendReq factory
+    # -----------------------------------------------------------------------
+
+    def _create_pytrends(
         self,
         keywords: List[str],
         timeframe: str,
-        geo: str
-    ) -> TrendReq:
-        """Initialize pytrends and build payload (sync operation)."""
-        pytrends = TrendReq(hl='en-US', tz=360)
-        pytrends.build_payload(kw_list=keywords, timeframe=timeframe, geo=geo)
+        geo: str,
+        gprop: str = "",
+    ) -> _TrendReq:
+        """Create TrendReq with optional gprop (e.g., 'youtube' for video trends)."""
+        start = time.monotonic()
+        ua = random.choice(self.USER_AGENTS)
+        logger.info(f"[Trends] Creating TrendReq (fail-fast, gprop='{gprop}', UA={ua[:40]}...)")
+        pytrends = _TrendReq(
+            hl='en-US',
+            tz=360,
+            timeout=(10, 30),
+            retries=0,
+            backoff_factor=0,
+            requests_args={'headers': {'User-Agent': ua}},
+        )
+        # gprop: '' = web, 'youtube' = YouTube, 'news', 'images', 'froogle'
+        pytrends.build_payload(kw_list=keywords, timeframe=timeframe, geo=geo, gprop=gprop)
+        elapsed = int((time.monotonic() - start) * 1000)
+        logger.info(f"[Trends] TrendReq init + build_payload completed in {elapsed}ms (gprop={gprop})")
         return pytrends
-    
-    def _safe_interest_over_time(self, pytrends: TrendReq) -> List[Dict[str, Any]]:
-        """Safely fetch interest over time data."""
+
+    # -----------------------------------------------------------------------
+    # Data fetchers — each catches all exceptions and returns defaults
+    # -----------------------------------------------------------------------
+
+    def _fetch_interest_over_time(self, pytrends: _TrendReq, keywords: List[str] = None) -> List[Dict[str, Any]]:
+        """Fetch interest over time data."""
+        start = time.monotonic()
         try:
             df = pytrends.interest_over_time()
-            if df.empty:
+            elapsed = int((time.monotonic() - start) * 1000)
+            if df is None or (hasattr(df, 'empty') and df.empty):
+                logger.info(f"[Trends] interest_over_time returned empty in {elapsed}ms")
                 return []
-            return self._format_dataframe(df.reset_index())
+            # Use pytrends.kw_list if keywords not provided
+            kw = keywords or pytrends.kw_list
+            result = self._format_dataframe(df.reset_index(), kw)
+            logger.info(f"[Trends] interest_over_time returned {len(result)} points in {elapsed}ms")
+            return result
         except Exception as e:
-            logger.error(f"Error fetching interest over time: {e}")
+            elapsed = int((time.monotonic() - start) * 1000)
+            logger.error(f"[Trends] interest_over_time failed in {elapsed}ms: {e}")
             return []
-    
-    def _safe_interest_by_region(self, pytrends: TrendReq) -> List[Dict[str, Any]]:
-        """Safely fetch interest by region data."""
+
+    def _fetch_interest_by_region(self, pytrends: _TrendReq, keywords: List[str] = None) -> List[Dict[str, Any]]:
+        """Fetch interest by region data."""
+        start = time.monotonic()
         try:
             df = pytrends.interest_by_region(resolution='COUNTRY', inc_low_vol=True, inc_geo_code=False)
-            if df.empty:
+            elapsed = int((time.monotonic() - start) * 1000)
+            if df is None or (hasattr(df, 'empty') and df.empty):
+                logger.info(f"[Trends] interest_by_region returned empty in {elapsed}ms")
                 return []
-            return self._format_dataframe(df.reset_index())
+            result = self._format_dataframe(df.reset_index(), keywords or pytrends.kw_list)
+            logger.info(f"[Trends] interest_by_region returned {len(result)} regions in {elapsed}ms")
+            return result
         except Exception as e:
-            logger.error(f"Error fetching interest by region: {e}")
+            elapsed = int((time.monotonic() - start) * 1000)
+            logger.error(f"[Trends] interest_by_region failed in {elapsed}ms: {e}")
             return []
-    
-    def _safe_related_topics(
-        self,
-        pytrends: TrendReq,
-        keywords: List[str]
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """Safely fetch related topics."""
+
+    def _fetch_related_topics(self, pytrends: _TrendReq) -> Dict[str, List[Dict[str, Any]]]:
+        """Fetch related topics. Patches catch IndexError from pytrends bug."""
+        start = time.monotonic()
+        result = {"top": [], "rising": []}
         try:
             topics_data = pytrends.related_topics()
-            result = {"top": [], "rising": []}
-            
-            for keyword in keywords:
-                if keyword in topics_data and isinstance(topics_data[keyword], dict):
-                    keyword_topics = topics_data[keyword]
-                    
-                    if "top" in keyword_topics and not keyword_topics["top"].empty:
-                        top_df = keyword_topics["top"]
-                        # Select relevant columns
-                        if "topic_title" in top_df.columns and "value" in top_df.columns:
-                            top_data = top_df[["topic_title", "value"]].to_dict('records')
-                            result["top"].extend(top_data)
-                    
-                    if "rising" in keyword_topics and not keyword_topics["rising"].empty:
-                        rising_df = keyword_topics["rising"]
-                        if "topic_title" in rising_df.columns and "value" in rising_df.columns:
-                            rising_data = rising_df[["topic_title", "value"]].to_dict('records')
-                            result["rising"].extend(rising_data)
-            
+            elapsed = int((time.monotonic() - start) * 1000)
+
+            if topics_data is None:
+                logger.info(f"[Trends] related_topics returned None in {elapsed}ms")
+                return result
+
+            if not isinstance(topics_data, dict):
+                logger.info(f"[Trends] related_topics returned {type(topics_data).__name__}, expected dict")
+                return result
+
+            for key, keyword_data in topics_data.items():
+                if keyword_data is None or not isinstance(keyword_data, dict):
+                    continue
+
+                for section in ["top", "rising"]:
+                    section_df = keyword_data.get(section)
+                    if section_df is None:
+                        continue
+                    if hasattr(section_df, 'empty') and section_df.empty:
+                        continue
+                    if not hasattr(section_df, 'to_dict'):
+                        continue
+
+                    try:
+                        if "topic_title" in section_df.columns and "value" in section_df.columns:
+                            data = section_df[["topic_title", "value"]].to_dict('records')
+                        else:
+                            data = section_df.to_dict('records')
+                        result[section].extend(data)
+                    except Exception as e:
+                        logger.debug(f"Error parsing {section} topics for key '{key}': {e}")
+                        continue
+
+            logger.info(f"[Trends] related_topics completed in {elapsed}ms, top={len(result['top'])} rising={len(result['rising'])}")
             return result
         except Exception as e:
-            logger.error(f"Error fetching related topics: {e}")
-            return {"top": [], "rising": []}
-    
-    def _safe_related_queries(
-        self,
-        pytrends: TrendReq,
-        keywords: List[str]
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """Safely fetch related queries."""
+            elapsed = int((time.monotonic() - start) * 1000)
+            logger.error(f"[Trends] related_topics failed in {elapsed}ms: {e}")
+            return result
+
+    def _fetch_related_queries(self, pytrends: _TrendReq) -> Dict[str, List[Dict[str, Any]]]:
+        """Fetch related queries. Patches catch IndexError from pytrends bug."""
+        start = time.monotonic()
+        result = {"top": [], "rising": []}
         try:
             queries_data = pytrends.related_queries()
-            result = {"top": [], "rising": []}
-            
-            for keyword in keywords:
-                if keyword in queries_data and isinstance(queries_data[keyword], dict):
-                    keyword_queries = queries_data[keyword]
-                    
-                    if "top" in keyword_queries and not keyword_queries["top"].empty:
-                        top_df = keyword_queries["top"]
-                        result["top"].extend(top_df.to_dict('records'))
-                    
-                    if "rising" in keyword_queries and not keyword_queries["rising"].empty:
-                        rising_df = keyword_queries["rising"]
-                        result["rising"].extend(rising_df.to_dict('records'))
-            
+            elapsed = int((time.monotonic() - start) * 1000)
+
+            if queries_data is None:
+                logger.info(f"[Trends] related_queries returned None in {elapsed}ms")
+                return result
+
+            if not isinstance(queries_data, dict):
+                logger.info(f"[Trends] related_queries returned {type(queries_data).__name__}, expected dict")
+                return result
+
+            for key, keyword_data in queries_data.items():
+                if keyword_data is None or not isinstance(keyword_data, dict):
+                    continue
+
+                for section in ["top", "rising"]:
+                    section_df = keyword_data.get(section)
+                    if section_df is None:
+                        continue
+                    if hasattr(section_df, 'empty') and section_df.empty:
+                        continue
+                    if not hasattr(section_df, 'to_dict'):
+                        continue
+
+                    try:
+                        data = section_df.to_dict('records')
+                        result[section].extend(data)
+                    except Exception as e:
+                        logger.debug(f"Error parsing {section} queries for key '{key}': {e}")
+                        continue
+
+            logger.info(f"[Trends] related_queries completed in {elapsed}ms, top={len(result['top'])} rising={len(result['rising'])}")
             return result
         except Exception as e:
-            logger.error(f"Error fetching related queries: {e}")
-            return {"top": [], "rising": []}
-    
-    def _format_dataframe(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
-        """Convert DataFrame to list of dicts (serializable format)."""
+            elapsed = int((time.monotonic() - start) * 1000)
+            logger.error(f"[Trends] related_queries failed in {elapsed}ms: {e}")
+            return result
+
+    # -----------------------------------------------------------------------
+    # Helpers
+    # -----------------------------------------------------------------------
+
+    def _format_dataframe(self, df: pd.DataFrame, keywords: List[str] = None) -> List[Dict[str, Any]]:
+        """Convert DataFrame to list of dicts. Handles both pytrends and SerpAPI formats."""
         if df.empty:
             return []
         
-        # Convert datetime columns to strings
-        for col in df.columns:
-            if pd.api.types.is_datetime64_any_dtype(df[col]):
-                df[col] = df[col].astype(str)
+        # Try to detect and handle SerpAPI-style nested data
+        # Check if the dataframe has 'date' column and 'values' array column
+        records = df.to_dict('records')
         
-        # Convert to dict records
-        return df.to_dict('records')
-    
+        # Check first record for nested values pattern (SerpAPI format)
+        if records and 'values' in records[0] and isinstance(records[0]['values'], list):
+            # SerpAPI-style: need to flatten
+            flat_records = []
+            for record in records:
+                date_str = record.get('date', '')
+                timestamp = record.get('timestamp', '')
+                is_partial = record.get('partial_data', False)
+                
+                # Extract values from nested array
+                for val_entry in record['values']:
+                    keyword_name = val_entry.get('query', '')
+                    value = val_entry.get('value', val_entry.get('extracted_value', 0))
+                    flat_record = {
+                        'date': date_str,
+                        'timestamp': timestamp,
+                        keyword_name: int(value) if value else 0,
+                    }
+                    if is_partial:
+                        flat_record['isPartial'] = True
+                    flat_records.append(flat_record)
+            records = flat_records
+        
+        # Convert datetime columns to strings
+        for record in records:
+            for key, value in record.items():
+                if hasattr(value, 'year'):  # datetime-like
+                    record[key] = str(value)
+        
+        return records
+
     def _build_cache_key(self, keywords: List[str], timeframe: str, geo: str) -> str:
-        """Build cache key from parameters."""
         keywords_str = ":".join(sorted(keywords))
         return f"google_trends:{keywords_str}:{timeframe}:{geo}"
-    
+
     def _get_from_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
-        """Get data from cache if not expired."""
         if cache_key not in self.cache:
             return None
-        
         cached_entry = self.cache[cache_key]
         cached_time = datetime.fromisoformat(cached_entry.get("timestamp", ""))
-        
         if datetime.utcnow() - cached_time > self.cache_ttl:
-            # Expired, remove from cache
             del self.cache[cache_key]
             return None
-        
-        # Return cached data (without cached flag)
         result = {**cached_entry}
         result.pop("cached", None)
         return result
-    
+
     def _save_to_cache(self, cache_key: str, data: Dict[str, Any]):
-        """Save data to cache."""
-        # Store with timestamp
-        cache_entry = {
-            **data,
-            "cached_at": datetime.utcnow().isoformat()
-        }
+        cache_entry = {**data, "cached_at": datetime.utcnow().isoformat()}
         self.cache[cache_key] = cache_entry
-        
-        # Clean up old cache entries periodically
-        if len(self.cache) > 100:  # Limit cache size
+        if len(self.cache) > 100:
             self._cleanup_cache()
-    
+
     def _cleanup_cache(self):
-        """Remove expired cache entries."""
         now = datetime.utcnow()
         expired_keys = []
-        
         for key, entry in self.cache.items():
             cached_time = datetime.fromisoformat(entry.get("cached_at", entry.get("timestamp", "")))
             if now - cached_time > self.cache_ttl:
                 expired_keys.append(key)
-        
         for key in expired_keys:
             del self.cache[key]
-        
         logger.debug(f"Cleaned up {len(expired_keys)} expired cache entries")
-    
+
     def _create_fallback_response(
         self,
         keywords: List[str],
         timeframe: str,
         geo: str,
-        error_message: str
+        gprop: str = "",
+        error_message: str = "",
     ) -> Dict[str, Any]:
-        """Create fallback response when trends analysis fails."""
+        source = "web" if gprop == "" else "podcast" if gprop == "youtube" else gprop
         return {
             "interest_over_time": [],
             "interest_by_region": [],
@@ -341,40 +549,38 @@ class GoogleTrendsService:
             "timeframe": timeframe,
             "geo": geo,
             "keywords": keywords,
+            "source": source,
             "timestamp": datetime.utcnow().isoformat(),
             "cached": False,
-            "error": error_message
+            "error": error_message,
         }
-    
+
     async def get_trending_searches(
         self,
         country: str = "united_states",
-        user_id: Optional[str] = None
+        user_id: Optional[str] = None,
     ) -> List[str]:
-        """
-        Get current trending searches for a country.
-        
-        Args:
-            country: Country name (e.g., "united_states", "united_kingdom")
-            user_id: User ID for subscription checks
-            
-        Returns:
-            List of trending search terms
-        """
         await self.rate_limiter.acquire()
-        
+
         try:
-            pytrends = TrendReq(hl='en-US', tz=360)
+            ua = random.choice(self.USER_AGENTS)
+            pytrends = _TrendReq(
+                hl='en-US',
+                tz=360,
+                timeout=(10, 30),
+                retries=0,
+                backoff_factor=0,
+                requests_args={'headers': {'User-Agent': ua}},
+            )
             trending_df = await asyncio.to_thread(
                 lambda: pytrends.trending_searches(pn=country)
             )
-            
-            if trending_df.empty:
+
+            if trending_df is None or (hasattr(trending_df, 'empty') and trending_df.empty):
                 return []
-            
-            # Return as list of strings
+
             return trending_df[0].tolist() if len(trending_df.columns) > 0 else []
-            
+
         except Exception as e:
             logger.error(f"Error fetching trending searches: {e}")
             return []

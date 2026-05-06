@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { Stack, Paper, Box, Chip, Typography } from "@mui/material";
+import { Stack, Paper, Box, Chip, Typography, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress } from "@mui/material";
+import { AutoAwesome as AutoAwesomeIcon } from "@mui/icons-material";
 import { CreateProjectPayload, Knobs, PodcastMode } from "./types";
 import { useSubscription } from "../../contexts/SubscriptionContext";
 import { podcastApi } from "../../services/podcastApi";
@@ -16,12 +17,60 @@ import { AvatarSelector } from "./CreateStep/AvatarSelector";
 import { CreateActions } from "./CreateStep/CreateActions";
 import { EnhancedTopicChoicesModal } from "./EnhancedTopicChoicesModal";
 import { TrendingTopicsModal } from "./CreateStep/TrendingTopicsModal";
+import { CategoryResearchModal } from "./CreateStep/CategoryResearchModal";
 
 const ENHANCE_TOPIC_PROGRESS_MESSAGES = [
   "Analyzing your topic idea...",
   "Enhancing clarity and hook...",
   "Aligning language for podcast listeners...",
 ];
+
+// Dynamic progress messages based on context
+const getEnhanceProgressMessage = (index: number, hasWebsite: boolean, hasTopicContext: boolean): string => {
+  const messagesWithAll = [
+    "Analyzing your topic with website and category research...",
+    "Incorporating website insights and research findings...",
+    "Generating podcast angles based on all available context...",
+    "Creating personalized episode concepts...",
+    "Finalizing enhanced pitch options...",
+  ];
+  
+  const messagesWithWebsite = [
+    "Analyzing your topic with website content...",
+    "Incorporating website insights and company details...",
+    "Generating podcast angles based on your website analysis...",
+    "Creating personalized episode concepts...",
+    "Finalizing enhanced pitch options...",
+  ];
+  
+  const messagesWithTopic = [
+    "Analyzing your topic with category research...",
+    "Incorporating research insights and trends...",
+    "Generating podcast angles based on your research...",
+    "Creating personalized episode concepts...",
+    "Finalizing enhanced pitch options...",
+  ];
+  
+  const messagesBasic = [
+    "Analyzing your topic idea...",
+    "Enhancing clarity and hook...",
+    "Aligning language for podcast listeners...",
+    "Crafting compelling angles...",
+    "Finalizing recommendations...",
+  ];
+  
+  let messages;
+  if (hasWebsite && hasTopicContext) {
+    messages = messagesWithAll;
+  } else if (hasWebsite) {
+    messages = messagesWithWebsite;
+  } else if (hasTopicContext) {
+    messages = messagesWithTopic;
+  } else {
+    messages = messagesBasic;
+  }
+  return messages[index % messages.length];
+};
 
 interface CreateModalProps {
   onCreate: (payload: CreateProjectPayload) => void;
@@ -61,20 +110,96 @@ export const CreateModal: React.FC<CreateModalProps> = ({ onCreate, open, defaul
   const [enhancedRationales, setEnhancedRationales] = useState<string[]>([]);
   const [choicesModalOpen, setChoicesModalOpen] = useState(false);
   const [editedChoices, setEditedChoices] = useState<string[]>([]);
+  
+  // Website extraction data for AI enhance
+  const [websiteData, setWebsiteData] = useState<{
+    title?: string;
+    text?: string;
+    summary?: string;
+    highlights?: string[];
+    url: string;
+    subpages?: Array<{id?: string; title?: string; url?: string; summary?: string; text?: string}>;
+  } | null>(null);
+
+  // Category research context for AI enhance
+  const [topicContext, setTopicContext] = useState<{
+    category: string;
+    topics: Array<{title: string; url: string; snippet: string; score: number}>;
+    selected_topic: {title: string; url: string; snippet: string};
+  } | null>(null);
+
+  // Enhance topic progress modal state
+  const [showEnhanceProgressModal, setShowEnhanceProgressModal] = useState(false);
 
   // Trending topics state
   const [trendingModalOpen, setTrendingModalOpen] = useState(false);
   const [trendingLoading, setTrendingLoading] = useState(false);
 
-  // Rotate placeholder every 3 seconds
-  useEffect(() => {
-    if (!topicInput) {
-      const interval = setInterval(() => {
-        setPlaceholderIndex((prev) => (prev + 1) % TOPIC_PLACEHOLDERS.length);
-      }, 3000);
-      return () => clearInterval(interval);
+  // Category research state
+  const [categoryResearchOpen, setCategoryResearchOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<"news" | "finance" | "research-paper" | "personal-site">("news");
+  const [categoryLoading, setCategoryLoading] = useState(false);
+  const [categoryTopics, setCategoryTopics] = useState<Array<{
+    title: string;
+    url: string;
+    snippet: string;
+    score: number;
+    favicon?: string;
+  }>>([]);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
+  const [categoryCached, setCategoryCached] = useState(false);
+  const [lastSearchedTopic, setLastSearchedTopic] = useState<string>("");
+  const [lastSearchedCategory, setLastSearchedCategory] = useState<"news" | "finance" | "research-paper" | "personal-site">("news");
+
+// Rotate placeholder every 3 seconds
+useEffect(() => {
+  if (!topicInput) {
+    const interval = setInterval(() => {
+      setPlaceholderIndex((prev) => (prev + 1) % TOPIC_PLACEHOLDERS.length);
+    }, 3000);
+    return () => clearInterval(interval);
+  }
+}, [topicInput]);
+
+// Cost estimate state - compatible with TopicUrlInput props
+type EstimateType = number | { ttsCost: number; avatarCost: number; videoCost: number; researchCost: number; total: number; } | null;
+const [estimatedCost, setEstimatedCost] = useState<EstimateType>(null);
+const [costEstimateLoading, setCostEstimateLoading] = useState(false);
+
+// Fetch cost estimate when config changes
+useEffect(() => {
+  const fetchEstimate = async () => {
+    if (!duration || !speakers || !podcastMode) return;
+    
+    setCostEstimateLoading(true);
+    try {
+      const result = await podcastApi.preEstimateCost({
+        duration,
+        speakers,
+        queryCount: 3, // Default to 3 queries
+        podcastMode,
+      });
+      
+      console.log('[Cost Estimate] Response:', result);
+      console.log('[Cost Estimate] Total:', result.estimate?.total);
+      console.log('[Cost Estimate] Full breakdown:', result.estimate);
+      
+      if (result.estimate?.total !== undefined) {
+        // Store full estimate object for tooltip
+        setEstimatedCost(result.estimate);
+      } else {
+        setEstimatedCost(null);
+      }
+    } catch (error) {
+      console.error("Cost estimate error:", error);
+      setEstimatedCost(null);
+    } finally {
+      setCostEstimateLoading(false);
     }
-  }, [topicInput]);
+  };
+  
+  fetchEstimate();
+}, [duration, speakers, podcastMode]);
 
   // Fetch Brand Avatar on mount but don't select it
   useEffect(() => {
@@ -92,6 +217,28 @@ export const CreateModal: React.FC<CreateModalProps> = ({ onCreate, open, defaul
       }
     };
     fetchBrandAvatar();
+  }, []);
+
+  // Load saved website extraction on mount
+  useEffect(() => {
+    const loadSavedWebsiteExtraction = async () => {
+      try {
+        const result = await podcastApi.getWebsiteExtraction();
+        if (result.success && result.data) {
+          setWebsiteData({
+            title: result.data.title,
+            text: result.data.text,
+            summary: result.data.summary,
+            highlights: result.data.highlights,
+            url: result.data.url,
+            subpages: result.data.subpages,
+          });
+        }
+      } catch (error) {
+        console.warn("Failed to load saved website extraction:", error);
+      }
+    };
+    loadSavedWebsiteExtraction();
   }, []);
 
   useEffect(() => {
@@ -204,7 +351,7 @@ export const CreateModal: React.FC<CreateModalProps> = ({ onCreate, open, defaul
   };
 
   const isUrl = useMemo(() => detectUrl(topicInput), [topicInput]);
-  const enhanceTopicMessage = enhancingTopic ? ENHANCE_TOPIC_PROGRESS_MESSAGES[enhanceTopicProgressIndex] : undefined;
+  const enhanceTopicMessage = enhancingTopic ? getEnhanceProgressMessage(enhanceTopicProgressIndex, !!websiteData, !!topicContext) : undefined;
 
   useEffect(() => {
     if (!enhancingTopic) {
@@ -213,22 +360,39 @@ export const CreateModal: React.FC<CreateModalProps> = ({ onCreate, open, defaul
     }
 
     const interval = setInterval(() => {
-      setEnhanceTopicProgressIndex((prev) => (prev + 1) % ENHANCE_TOPIC_PROGRESS_MESSAGES.length);
+      setEnhanceTopicProgressIndex((prev) => {
+        const maxMessages = (websiteData || topicContext) ? 5 : 3;
+        return (prev + 1) % maxMessages;
+      });
     }, 1200);
 
     return () => clearInterval(interval);
-  }, [enhancingTopic]);
+  }, [enhancingTopic, websiteData, topicContext]);
 
   // Handle AI Details button click
   const handleAIDetailsClick = async () => {
     if (!topicInput.trim() || enhancingTopic) return;
     
+    // Show progress modal
+    setShowEnhanceProgressModal(true);
+    
     try {
       setEnhancingTopic(true);
-      // We pass the current Bible context if we have it (unlikely here as it's generated in analysis)
-      // But the backend will generate it from onboarding data if missing
+      
+      // Build website data (excluding images/favicon)
+      const websiteDataForApi = websiteData ? {
+        title: websiteData.title,
+        text: websiteData.text,
+        summary: websiteData.summary,
+        highlights: websiteData.highlights,
+        url: websiteData.url,
+        subpages: websiteData.subpages,
+      } : undefined;
+      
       const result = await podcastApi.enhanceIdea({
         idea: topicInput,
+        website_data: websiteDataForApi,
+        topic_context: topicContext || undefined,
       });
       
       if (result.enhanced_ideas && result.enhanced_ideas.length === 3) {
@@ -241,7 +405,65 @@ export const CreateModal: React.FC<CreateModalProps> = ({ onCreate, open, defaul
       console.error("Failed to enhance idea with AI:", error);
     } finally {
       setEnhancingTopic(false);
+      setShowEnhanceProgressModal(false);
     }
+  };
+
+  // Handle Category Research (News/Finance/Research Papers/Personal Website) click
+  const handleCategoryResearchClick = async (category: "news" | "finance" | "research-paper" | "personal-site", websiteUrl?: string, forceRefresh: boolean = false, overrideKeyword?: string) => {
+    const currentTopic = (overrideKeyword || topicInput.trim());
+    
+    // Check if we have cached results for the same topic + category combination (only if not force refresh)
+    if (!forceRefresh && !overrideKeyword && currentTopic === lastSearchedTopic && category === lastSearchedCategory && categoryTopics.length > 0) {
+      setSelectedCategory(category);
+      setCategoryResearchOpen(true);
+      setCategoryCached(true);
+      setCategoryLoading(false);
+      return;
+    }
+
+    setSelectedCategory(category);
+    setCategoryResearchOpen(true);
+    setCategoryLoading(true);
+    setCategoryError(null);
+    setCategoryCached(false);
+    setCategoryTopics([]);
+
+    // For personal-site, check if topic input looks like a URL
+    let websiteUrlToUse: string | undefined;
+    if (category === "personal-site" && topicInput.trim()) {
+      const topicText = topicInput.trim();
+      // Check if it looks like a URL
+      if (topicText.startsWith('http://') || topicText.startsWith('https://') || topicText.includes('://') || (topicText.includes('.') && !topicText.includes(' '))) {
+        websiteUrlToUse = topicText;
+      }
+    }
+
+    try {
+      const result = await podcastApi.researchByCategory({
+        category,
+        keyword: currentTopic || undefined,
+        maxResults: 8,
+        websiteUrl: websiteUrlToUse,
+      });
+
+      if (result.success) {
+        setCategoryTopics(result.topics || []);
+        setLastSearchedTopic(currentTopic);
+        setLastSearchedCategory(category);
+      } else {
+        setCategoryError(result.error || `Failed to fetch ${category} topics`);
+      }
+    } catch (error: any) {
+      setCategoryError(error?.message || `Failed to fetch ${category} topics`);
+    } finally {
+      setCategoryLoading(false);
+    }
+  };
+
+  // Handle Redo Search for category research
+  const handleCategoryRedoSearch = (keyword: string, websiteUrl?: string) => {
+    handleCategoryResearchClick(selectedCategory, websiteUrl, true, keyword);
   };
 
   // Handle enhanced topic choice selection
@@ -290,20 +512,39 @@ export const CreateModal: React.FC<CreateModalProps> = ({ onCreate, open, defaul
     // Determine if input is idea or URL
     // For URL, we extract the first URL found or use the whole string if it's a direct URL
     let finalIdea = "";
-    let finalUrl = "";
 
     if (isUrl) {
-      // Simple extraction: if the input contains a URL, we treat the input as the URL (or extract it)
-      // For now, let's assume the user pasted a URL. 
-      // If there's mixed text, we might want to just send the whole thing as 'url' if the backend handles extraction,
-      // or extract it here. 
-      // The previous logic used specific 'url' state.
+      // Extract the URL from the input
       const urlMatch = topicInput.match(/(https?:\/\/[^\s]+)/);
-      if (urlMatch) {
-        finalUrl = urlMatch[0];
-      } else {
-        // Fallback
-        finalUrl = topicInput;
+      const detectedUrl = urlMatch ? urlMatch[0] : topicInput;
+      
+      // Extract content from the URL using Exa
+      try {
+        setEnhancingTopic(true);
+        setEnhanceTopicProgressIndex(0);
+        
+        const { podcastApi } = await import("../../services/podcastApi");
+        const extractResult = await podcastApi.extractUrl({ url: detectedUrl });
+        
+        if (extractResult.success && extractResult.summary) {
+          // Use extracted content as the podcast topic
+          finalIdea = extractResult.summary;
+          if (extractResult.title) {
+            finalIdea = `${extractResult.title}: ${finalIdea}`;
+          }
+        } else if (extractResult.success && extractResult.text) {
+          // Fallback to text if no summary
+          finalIdea = extractResult.text.substring(0, 500);
+        } else {
+          // Fallback: use the URL itself if extraction fails
+          finalIdea = detectedUrl;
+          console.warn("[CreateModal] URL extraction failed:", extractResult.error);
+        }
+      } catch (error) {
+        console.error("[CreateModal] URL extraction error:", error);
+        finalIdea = detectedUrl; // Fallback to URL
+      } finally {
+        setEnhancingTopic(false);
       }
     } else {
       finalIdea = topicInput;
@@ -370,7 +611,7 @@ export const CreateModal: React.FC<CreateModalProps> = ({ onCreate, open, defaul
     
     try {
       await onCreate({
-        ideaOrUrl: finalUrl || finalIdea,
+        ideaOrUrl: finalIdea,
         speakers,
         duration,
         knobs: finalKnobs,
@@ -588,13 +829,18 @@ export const CreateModal: React.FC<CreateModalProps> = ({ onCreate, open, defaul
               showAIDetailsButton={showAIDetailsButton}
               onAIDetailsClick={handleAIDetailsClick}
               onTrendingTopicsClick={() => setTrendingModalOpen(true)}
+              onCategoryResearchClick={handleCategoryResearchClick}
               placeholderIndex={placeholderIndex}
               loading={enhancingTopic}
               loadingMessage={enhanceTopicMessage}
+              extractedData={websiteData}
+              setExtractedData={setWebsiteData}
               trendingLoading={trendingLoading}
-              estimatedCost={null}
+              categoryResearchLoading={categoryLoading}
+              estimatedCost={estimatedCost}
               duration={duration}
               speakers={speakers}
+              podcastMode={podcastMode}
               knobs={knobs}
             />
           </Box>
@@ -666,6 +912,127 @@ export const CreateModal: React.FC<CreateModalProps> = ({ onCreate, open, defaul
           onSelectTopic={(topic) => setTopicInput(topic)}
           initialKeywords={topicInput}
         />
+
+        {/* Category Research Modal */}
+        <CategoryResearchModal
+          open={categoryResearchOpen}
+          onClose={() => setCategoryResearchOpen(false)}
+          category={selectedCategory}
+          keyword={topicInput}
+          websiteUrl={selectedCategory === "personal-site" ? topicInput : undefined}
+          loading={categoryLoading}
+          topics={categoryTopics}
+          error={categoryError}
+          onSelectTopic={(topic) => {
+            // Save topic context
+            const selectedTopicData = categoryTopics.find(t => t.title === topic);
+            if (selectedTopicData) {
+              setTopicContext({
+                category: selectedCategory,
+                topics: categoryTopics.map(t => ({title: t.title, url: t.url, snippet: t.snippet, score: t.score})),
+                selected_topic: {
+                  title: selectedTopicData.title,
+                  url: selectedTopicData.url,
+                  snippet: selectedTopicData.snippet,
+                },
+              });
+            }
+            setTopicInput(topic);
+            setCategoryResearchOpen(false);
+          }}
+          onRedoSearch={handleCategoryRedoSearch}
+          onConfirmSelection={(selectedTopics) => {
+            if (selectedTopics.length > 0) {
+              // Save topic context
+              const firstSelected = categoryTopics.find(t => t.title === selectedTopics[0]);
+              if (firstSelected) {
+                setTopicContext({
+                  category: selectedCategory,
+                  topics: categoryTopics.map(t => ({title: t.title, url: t.url, snippet: t.snippet, score: t.score})),
+                  selected_topic: {
+                    title: firstSelected.title,
+                    url: firstSelected.url,
+                    snippet: firstSelected.snippet,
+                  },
+                });
+              }
+              setTopicInput(selectedTopics[0]);
+            }
+            setCategoryResearchOpen(false);
+          }}
+          isCached={categoryCached}
+        />
+
+        {/* Enhance Topic Progress Modal */}
+        <Dialog
+          open={showEnhanceProgressModal}
+          disableEscapeKeyDown={false}
+          onClose={() => setShowEnhanceProgressModal(false)}
+          maxWidth="sm"
+          fullWidth
+          PaperProps={{
+            sx: {
+              background: "linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)",
+              backgroundColor: "#1e1b4b",
+              color: "#fff",
+              borderRadius: 3,
+              boxShadow: "0 8px 40px rgba(49, 46, 129, 0.4)",
+            },
+          }}
+        >
+          <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1.5, fontWeight: 600 }}>
+            <CircularProgress size={20} sx={{ color: "#a78bfa" }} />
+            Enhancing Your Topic
+          </DialogTitle>
+          <DialogContent sx={{ textAlign: "center", py: 4 }}>
+            <Box sx={{ mb: 3 }}>
+              <CircularProgress 
+                size={60} 
+                thickness={4}
+                sx={{ 
+                  color: "#a78bfa",
+                  mb: 2,
+                }} 
+              />
+            </Box>
+            <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: "#fff" }}>
+              {enhanceTopicMessage || "Processing your topic..."}
+            </Typography>
+            <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.7)", mb: 2 }}>
+              This may take a few seconds
+            </Typography>
+            
+            {/* Context info */}
+            <Box sx={{ mt: 3, p: 2, bgcolor: "rgba(255,255,255,0.1)", borderRadius: 2 }}>
+              <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.6)", display: "block", mb: 1 }}>
+                Using context from:
+              </Typography>
+              <Stack direction="row" spacing={1} justifyContent="center" flexWrap="wrap" useFlexGap>
+                {websiteData && (
+                  <Chip 
+                    size="small" 
+                    label={websiteData.title ? `${websiteData.title.slice(0, 15)}...` : "Website"} 
+                    sx={{ bgcolor: "rgba(167, 139, 250, 0.3)", color: "#fff" }}
+                  />
+                )}
+                {topicContext && (
+                  <Chip 
+                    size="small" 
+                    label={`${topicContext.category.charAt(0).toUpperCase() + topicContext.category.slice(1)} Research`}
+                    sx={{ bgcolor: "rgba(16, 185, 129, 0.3)", color: "#fff" }}
+                  />
+                )}
+                {(!websiteData && !topicContext) && (
+                  <Chip 
+                    size="small" 
+                    label="Topic only"
+                    sx={{ bgcolor: "rgba(100, 116, 139, 0.3)", color: "#fff" }}
+                  />
+                )}
+              </Stack>
+            </Box>
+          </DialogContent>
+        </Dialog>
       </Stack>
     </Paper>
   );

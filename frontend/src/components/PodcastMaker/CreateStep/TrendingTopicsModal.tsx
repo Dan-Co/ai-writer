@@ -83,10 +83,11 @@ export const TrendingTopicsModal: React.FC<TrendingTopicsModalProps> = ({
       if (result.success && result.data) {
         setTrendsData(result.data as GoogleTrendsData);
       } else {
-        setError(result.error || "Failed to fetch trends data");
+        setError(result.error || "Failed to fetch trends data. Google may be rate-limiting requests — please try again in a few minutes.");
       }
     } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.message || "Failed to fetch trending topics");
+      const msg = err?.response?.data?.detail || err?.message || "Failed to fetch trending topics. Please try again later.";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -113,6 +114,15 @@ export const TrendingTopicsModal: React.FC<TrendingTopicsModalProps> = ({
   const regions = trendsData?.interest_by_region || [];
   const relatedTopics = trendsData?.related_topics || { top: [], rising: [] };
   const relatedQueries = trendsData?.related_queries || { top: [], rising: [] };
+  const hasAnyData = trendsData
+    && (
+      trendsData.interest_over_time?.length > 0
+      || trendsData.interest_by_region?.length > 0
+      || trendsData.related_topics?.top?.length > 0
+      || trendsData.related_topics?.rising?.length > 0
+      || trendsData.related_queries?.top?.length > 0
+      || trendsData.related_queries?.rising?.length > 0
+    );
 
   return (
     <Dialog
@@ -180,7 +190,30 @@ export const TrendingTopicsModal: React.FC<TrendingTopicsModalProps> = ({
           </Alert>
         )}
 
-        {!loading && trendsData && (
+        {!loading && trendsData && !hasAnyData && (
+          <Box sx={{ py: 4, textAlign: "center" }}>
+            <TrendingUpIcon sx={{ fontSize: 48, color: "#f59e0b", mb: 1 }} />
+            <Typography variant="body1" sx={{ fontWeight: 600, color: "#0f172a", mb: 1 }}>
+              No trends data available
+            </Typography>
+            <Typography variant="body2" sx={{ color: "#64748b", mb: 2 }}>
+              Google Trends could not find data for &ldquo;{initialKeywords}&rdquo;.
+              {trendsData.error
+                ? " This may be due to rate limiting — please try again in a few minutes."
+                : " The topic may be too specific. Try a broader keyword."}
+            </Typography>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={fetchTrends}
+              sx={{ textTransform: "none", borderColor: "#667eea", color: "#667eea" }}
+            >
+              Retry
+            </Button>
+          </Box>
+        )}
+
+        {!loading && trendsData && hasAnyData && (
           <>
             <Tabs
               value={tabValue}

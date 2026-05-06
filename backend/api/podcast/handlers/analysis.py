@@ -4,8 +4,9 @@ Podcast Analysis Handlers
 Analysis endpoint for podcast ideas.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from typing import Dict, Any, Optional, List
+from datetime import datetime
 import json
 import uuid
 from sqlalchemy.orm import Session
@@ -21,11 +22,18 @@ from utils.asset_tracker import save_asset_to_library
 from loguru import logger
 import os
 from ..constants import get_podcast_media_dir
+from ..prompts import get_enhance_topic_prompt, format_website_context
 from ..models import (
     PodcastAnalyzeRequest, 
     PodcastAnalyzeResponse,
     PodcastEnhanceIdeaRequest,
-    PodcastEnhanceIdeaResponse
+    PodcastEnhanceIdeaResponse,
+    ExtractUrlRequest,
+    ExtractUrlResponse,
+    WebsiteAnalysisRequest,
+    WebsiteAnalysisResponse,
+    PodcastPreEstimateRequest,
+    PodcastPreEstimateResponse,
 )
 from ..cost_estimator import estimate_podcast_cost
 
@@ -35,6 +43,74 @@ def _is_podcast_only_mode() -> bool:
     return os.getenv("ALWRITY_ENABLED_FEATURES", "").strip().lower() == "podcast"
 
 router = APIRouter()
+
+
+@router.post("/pre-estimate", response_model=PodcastPreEstimateResponse)
+async def pre_estimate_cost(
+    request: PodcastPreEstimateRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Lightweight endpoint to estimate podcast creation cost before analysis.
+    
+    Takes user configuration (duration, speakers, query_count, podcast_mode) and returns
+    a cost estimate WITHOUT running full analysis.
+    
+    Optional model overrides can be specified to estimate with different models.
+    """
+    try:
+        include_avatar_phase = request.podcast_mode != "audio_only"
+        
+        estimate = estimate_podcast_cost(
+            db=db,
+            duration_minutes=request.duration,
+            speakers=request.speakers,
+            query_count=request.query_count,
+            include_avatar_phase=include_avatar_phase,
+            # Model overrides if provided
+            gemini_model=request.gemini_model or "gemini-2.5-flash",
+            audio_tts_model=request.audio_tts_model or "minimax/speech-02-hd",
+            voice_clone_engine=request.voice_clone_engine or "qwen3",
+            image_model=request.image_model or "qwen-image",
+            video_model=request.video_model or "wan-2.5",
+        )
+        
+        # Debug: get pricing row count and providers
+        from models.subscription_models import APIProviderPricing
+        pricing_count = db.query(APIProviderPricing).count()
+        providers = db.query(APIProviderPricing.provider).distinct().all()
+        provider_list = sorted([p[0].value for p in providers]) if providers else []
+        
+        debug_info = {
+            "pricing_rows": pricing_count,
+            "providers": provider_list,
+        }
+        
+        # Log pricing debug info at warning level
+        logger.warning(f"[PRE-ESTIMATE] Pricing debug: rows={pricing_count}, providers={provider_list}")
+        logger.warning(f"[PRE-ESTIMATE] Models: llm={request.gemini_model}, tts={request.audio_tts_model}, video={request.video_model}")
+        
+        if estimate is None:
+            return PodcastPreEstimateResponse(
+                estimate=None,
+                error="Pricing data unavailable. Please try again later.",
+                pricing_available=False,
+                debug=debug_info,
+            )
+        
+        return PodcastPreEstimateResponse(
+            estimate=estimate, 
+            error=None,
+            pricing_available=True,
+            debug=debug_info,
+        )
+        
+    except Exception as e:
+        logger.error(f"Pre-estimate error: {e}")
+        return PodcastPreEstimateResponse(
+            estimate=None,
+            error=str(e),
+        )
 
 
 @router.post("/idea/enhance", response_model=PodcastEnhanceIdeaResponse)
@@ -77,39 +153,27 @@ async def enhance_podcast_idea(
             except Exception as exc:
                 logger.debug(f"[Podcast Enhance] Bible parsing skipped in podcast mode: {exc}")
 
-    prompt = f"""
-You are a creative podcast producer. Generate 3 distinct, compelling podcast episode concepts from the raw idea.
+    # Log what's being used for context
+    context_used = []
+    if bible_context:
+        context_used.append("Podcast Bible")
+    if request.website_data:
+        context_used.append("Website Extraction")
+    if request.topic_context:
+        category = request.topic_context.get("category", "unknown")
+        context_used.append(f"Category Research ({category})")
+    
+    logger.warning(f"[Podcast Enhance] Generating with context: {', '.join(context_used) if context_used else 'basic idea only'}")
 
-{f"USER PERSONALIZATION CONTEXT (Podcast Bible):\n{bible_context}\n" if bible_context else ""}
-
-RAW IDEA/KEYWORDS: "{request.idea}"
-
-TASK:
-Generate 3 different enhanced versions, each with a unique angle:
-1. Professional & Expert-led angle (focus on authority, insights, and expertise)
-2. Storytelling & Human interest angle (focus on narratives, emotions, and personal connections)
-3. Trendy & Contemporary angle (focus on current trends, modern perspectives, and relevance)
-
-Each version should be 2-3 sentences, audience-focused, and align with host persona if provided.
-
-Return JSON with:
-- enhanced_ideas: array of 3 strings, each string being a complete episode pitch (NOT objects, just plain strings)
-- rationales: array of 3 strings explaining the approach for each version
-
-IMPORTANT: enhanced_ideas must be an array of plain strings, NOT objects. Example:
-{{
-  "enhanced_ideas": [
-    "Your expert guide to AI advancement: A practical look at how AI is transforming industries...",
-    "The human stories behind AI innovation: From Silicon Valley to your daily life...",
-    "AI in 2026: What's trending and what's next in artificial intelligence..."
-  ],
-  "rationales": [
-    "Professional approach focusing on expertise and authority",
-    "Storytelling approach emphasizing human connection",
-    "Contemporary approach highlighting current relevance"
-  ]
-}}
-"""
+    # Use new context builder for prompt generation
+    from services.podcast_context_builder import context_builder
+    context_result = context_builder.build_enhance_context(
+        idea=request.idea,
+        bible_context=bible_context,
+        website_data=request.website_data,
+        topic_context=request.topic_context,
+    )
+    prompt = context_result["prompt"]
 
     try:
         raw = llm_text_gen(
@@ -502,3 +566,316 @@ Requirements:
     except Exception as exc:
         logger.error(f"[Regenerate Queries] Failed for user {user_id}: {exc}")
         raise HTTPException(status_code=500, detail=f"Regenerate queries failed: {exc}")
+
+
+@router.post("/extract-url", response_model=ExtractUrlResponse)
+async def extract_url_content(
+    request: ExtractUrlRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """
+    Extract content from a URL using Exa's get_contents API.
+    
+    This allows users to paste a blog post or article URL as their podcast topic,
+    and we'll extract the content to use as the podcast idea.
+    """
+    user_id = require_authenticated_user(current_user)
+    
+    from exa_py import Exa
+    import os
+    
+    api_key = os.getenv("EXA_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="EXA_API_KEY not configured")
+    
+    exa = Exa(api_key)
+    
+    logger.warning(f"[ExtractUrl] Extracting content from: {request.url} for user {user_id}")
+    
+    try:
+        result = exa.get_contents(
+            urls=[request.url],
+            text=True,
+            highlights=True,
+            summary=True,
+            subpages=2,
+        )
+    except Exception as exa_error:
+        logger.error(f"[ExtractUrl] Exa call error: {exa_error}")
+        return ExtractUrlResponse(
+            success=False,
+            url=request.url,
+            error=f"Exa API error: {str(exa_error)}"
+        )
+    
+    # Check for errors using the correct attribute (statuses is array of status objects)
+    if hasattr(result, 'statuses') and result.statuses:
+        for status in result.statuses:
+            if status.status == "error":
+                logger.error(f"[ExtractUrl] Failed to extract {status.id}: {status.error.tag if hasattr(status.error, 'tag') else 'unknown'}")
+                return ExtractUrlResponse(
+                    success=False,
+                    url=request.url,
+                    error=f"Failed to extract content: {status.error.tag if hasattr(status.error, 'tag') else 'unknown error'}"
+                )
+    
+    if not result.results:
+        return ExtractUrlResponse(
+            success=False,
+            url=request.url,
+            error="No content found at the provided URL"
+        )
+    
+    # Extract content - safe to access result now
+    content = result.results[0]
+    
+    # Extract all available fields from Exa response
+    extracted_text = content.text or ""
+    extracted_summary = getattr(content, 'summary', "") or ""
+    extracted_title = content.title or ""
+    
+    # Highlights - extract from content.highlights array if available
+    highlights = []
+    if hasattr(content, 'highlights') and content.highlights:
+        highlights = [h for h in content.highlights if h]
+    
+    # Additional fields from Exa response
+    image = getattr(content, 'image', None)
+    favicon = getattr(content, 'favicon', None)
+    
+    # Subpages - extract with their own content
+    subpages = []
+    if hasattr(content, 'subpages') and content.subpages:
+        for sp in content.subpages:
+            subpages.append({
+                'id': sp.get('id', ''),
+                'title': sp.get('title', ''),
+                'url': sp.get('url', ''),
+                'summary': sp.get('summary', ''),
+                'text': sp.get('text', '')[:500] if sp.get('text') else '',  # First 500 chars
+            })
+    
+    logger.warning(f"[ExtractUrl] Successfully extracted {len(extracted_text)} chars from {request.url}")
+    logger.warning(f"[ExtractUrl] title={extracted_title[:50]}, summary={extracted_summary[:50]}, highlights={len(highlights)}, subpages={len(subpages)}")
+    
+    return ExtractUrlResponse(
+        success=True,
+        title=extracted_title,
+        text=extracted_text,
+        summary=extracted_summary,
+        author=getattr(content, 'author', None),
+        highlights=highlights,
+        url=request.url,
+        image=image,
+        favicon=favicon,
+        subpages=subpages,
+    )
+
+
+@router.post("/website-analysis", response_model=WebsiteAnalysisResponse)
+async def save_website_analysis(
+    request: WebsiteAnalysisRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Save the user's website analysis for reuse in future podcasts."""
+    user_id = require_authenticated_user(current_user)
+    
+    try:
+        from services.user_data_service import user_data_service
+        
+        website_data = {
+            "website_url": request.website_url,
+            "extracted_at": datetime.now().isoformat(),
+            "exa_content": request.exa_content,
+            "full_analysis": None,
+            "analysis_status": "pending",
+        }
+        
+        success = user_data_service.save_user_data(
+            user_id=user_id,
+            data_key="website_analysis",
+            data_value=website_data,
+        )
+        
+        if success:
+            logger.warning(f"[WebsiteAnalysis] Saved analysis for user {user_id}: {request.website_url}")
+            return WebsiteAnalysisResponse(
+                success=True,
+                website_url=request.website_url,
+                message="Website analysis saved successfully",
+            )
+        else:
+            return WebsiteAnalysisResponse(
+                success=False,
+                error="Failed to save website analysis",
+            )
+            
+    except Exception as exc:
+        logger.error(f"[WebsiteAnalysis] Failed to save for user {user_id}: {exc}")
+        return WebsiteAnalysisResponse(
+            success=False,
+            error=f"Failed to save: {str(exc)}"
+        )
+
+
+@router.get("/website-extraction")
+async def get_saved_website_extraction(request: Request = None):
+    """Get previously saved website extraction data for this user."""
+    try:
+        # Safely get current_user from Depends
+        if request is None or not hasattr(request, 'state'):
+            logger.warning("[WebsiteExtraction] No request or state - user not authenticated")
+            return {"success": False, "data": None, "error": "Not authenticated"}
+        
+        current_user = getattr(request.state, 'user', None)
+        if not current_user:
+            logger.warning("[WebsiteExtraction] No user in request state")
+            return {"success": False, "data": None, "error": "Not authenticated"}
+            
+        user_id = require_authenticated_user(current_user)
+        
+        from services.user_data_service import UserDataService
+        from services.database import get_db
+        db = next(get_db())
+        
+        user_service = UserDataService(db)
+        extraction = user_service.get_website_extraction(user_id)
+        
+        if extraction:
+            logger.info(f"[WebsiteExtraction] Found saved data for user {user_id}")
+            return {
+                "success": True,
+                "data": extraction
+            }
+        else:
+            logger.info(f"[WebsiteExtraction] No saved data for user {user_id}")
+            return {
+                "success": False,
+                "data": None
+            }
+            
+    except Exception as exc:
+        logger.error(f"[WebsiteExtraction] Failed for user: {exc}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(exc)
+        }
+
+
+@router.post("/website-extraction")
+async def save_website_extraction(
+    extraction: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Save website extraction data for future use."""
+    user_id = require_authenticated_user(current_user)
+    
+    try:
+        from services.user_data_service import UserDataService
+        from services.database import get_db
+        db = next(get_db())
+        
+        user_service = UserDataService(db)
+        success = user_service.save_website_extraction(user_id, extraction)
+        
+        if success:
+            logger.info(f"[WebsiteExtraction] Saved for user {user_id}")
+            return {
+                "success": True,
+                "message": "Website extraction saved"
+            }
+        else:
+            return {
+                "success": False,
+                "error": "Failed to save"
+            }
+            
+    except Exception as exc:
+        logger.error(f"[WebsiteExtraction] Save failed: {exc}")
+        return {
+            "success": False,
+            "error": str(exc)
+        }
+
+
+@router.post("/project/{project_id}/topic-context")
+async def save_topic_context(
+    project_id: str,
+    topic_context: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Save topic context (category research) to a podcast project."""
+    user_id = require_authenticated_user(current_user)
+    
+    try:
+        from services.database import get_db
+        from models.podcast_models import PodcastProject
+        
+        db = next(get_db())
+        
+        # Find the project
+        project = db.query(PodcastProject).filter(
+            PodcastProject.project_id == project_id,
+            PodcastProject.user_id == user_id
+        ).first()
+        
+        if not project:
+            return {
+                "success": False,
+                "error": "Project not found"
+            }
+        
+        # Update topic context
+        project.topic_context = topic_context
+        db.commit()
+        
+        logger.info(f"[TopicContext] Saved for project {project_id}")
+        return {
+            "success": True,
+            "message": "Topic context saved"
+        }
+        
+    except Exception as exc:
+        logger.error(f"[TopicContext] Save failed: {exc}")
+        return {
+            "success": False,
+            "error": str(exc)
+        }
+
+
+@router.get("/project/{project_id}/topic-context")
+async def get_topic_context(
+    project_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Get topic context from a podcast project."""
+    user_id = require_authenticated_user(current_user)
+    
+    try:
+        from services.database import get_db
+        from models.podcast_models import PodcastProject
+        
+        db = next(get_db())
+        
+        project = db.query(PodcastProject).filter(
+            PodcastProject.project_id == project_id,
+            PodcastProject.user_id == user_id
+        ).first()
+        
+        if not project:
+            return {
+                "success": False,
+                "error": "Project not found"
+            }
+        
+        return {
+            "success": True,
+            "data": project.topic_context
+        }
+        
+    except Exception as exc:
+        logger.error(f"[TopicContext] Get failed: {exc}")
+        return {
+            "success": False,
+            "error": str(exc)
+        }

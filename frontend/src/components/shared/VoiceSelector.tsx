@@ -42,35 +42,20 @@ import {
 import { getLatestVoiceClone, VoiceCloneResponse } from "../../api/brandAssets";
 import { getAuthTokenGetter, getApiUrl } from "../../api/client";
 import { VoiceAvatarPlaceholder } from "../OnboardingWizard/PersonalizationStep/components/VoiceAvatarPlaceholder";
-
-export type VoiceOption = {
-  id: string;
-  name: string;
-  personality?: string;
-  isCustom?: boolean;
-  previewUrl?: string;
-  gender?: "male" | "female";
-  category?: string;
-};
-
-export type VoiceAudioSettings = {
-  speed: number;
-  volume: number;
-  pitch: number;
-  emotion: string;
-};
-
-const DEFAULT_AUDIO_SETTINGS: VoiceAudioSettings = {
-  speed: 1.0,
-  volume: 1.0,
-  pitch: 0,
-  emotion: "neutral",
-};
-
-const EMOTION_OPTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
-
-type GenderFilter = "all" | "male" | "female";
-type CategoryFilter = string;
+import { useVoicePreview } from "./useVoicePreview";
+import { useVoiceFiltering } from "./useVoiceFiltering";
+import { VoiceClonePanel } from "./VoiceClonePanel";
+import {
+  VoiceOption,
+  VoiceAudioSettings,
+  DEFAULT_AUDIO_SETTINGS,
+  EMOTION_OPTIONS,
+  VOICE_PREVIEW_MAP,
+  CATEGORY_OPTIONS,
+  PREDEFINED_VOICES,
+  CategoryFilter,
+  VoiceSelectorGenderFilter,
+} from "./voiceConstants";
 
 interface VoiceSelectorProps {
   value: string;
@@ -81,58 +66,6 @@ interface VoiceSelectorProps {
   audioSettings?: VoiceAudioSettings;
   onAudioSettingsChange?: (settings: VoiceAudioSettings) => void;
 }
-
-const VOICE_SAMPLE_BASE = "/assets/voice-samples";
-
-const VOICE_PREVIEW_MAP: Record<string, string> = {
-  Wise_Woman: `${VOICE_SAMPLE_BASE}/wise_woman.mp3`,
-  Friendly_Person: `${VOICE_SAMPLE_BASE}/friendly_person.mp3`,
-  Inspirational_girl: `${VOICE_SAMPLE_BASE}/inspirational_girl.mp3`,
-  Deep_Voice_Man: `${VOICE_SAMPLE_BASE}/deep_voice_man.mp3`,
-  Calm_Woman: `${VOICE_SAMPLE_BASE}/calm_woman.mp3`,
-  Casual_Guy: `${VOICE_SAMPLE_BASE}/casual_guy.mp3`,
-  Lively_Girl: `${VOICE_SAMPLE_BASE}/lively_girl.mp3`,
-  Patient_Man: `${VOICE_SAMPLE_BASE}/patient_man.mp3`,
-  Young_Knight: `${VOICE_SAMPLE_BASE}/young_knight.mp3`,
-  Determined_Man: `${VOICE_SAMPLE_BASE}/determined_man.mp3`,
-  Lovely_Girl: `${VOICE_SAMPLE_BASE}/lovely_girl.mp3`,
-  Decent_Boy: `${VOICE_SAMPLE_BASE}/decent_boy.mp3`,
-  Imposing_Manner: `${VOICE_SAMPLE_BASE}/imposing_manner.mp3`,
-  Elegant_Man: `${VOICE_SAMPLE_BASE}/elegant_man.mp3`,
-  Abbess: `${VOICE_SAMPLE_BASE}/abbess.mp3`,
-  Sweet_Girl_2: `${VOICE_SAMPLE_BASE}/sweet_girl.mp3`,
-  Exuberant_Girl: `${VOICE_SAMPLE_BASE}/exuberant_girl.mp3`,
-};
-
-const CATEGORY_OPTIONS: { value: CategoryFilter; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "educational", label: "Educational" },
-  { value: "marketing", label: "Marketing" },
-  { value: "professional", label: "Professional" },
-  { value: "creative", label: "Creative" },
-  { value: "calming", label: "Calming" },
-  { value: "motivational", label: "Motivational" },
-];
-
-const PREDEFINED_VOICES: VoiceOption[] = [
-  { id: "Wise_Woman", name: "Wise Woman", personality: "Authoritative, trustworthy female voice - perfect for educational content", previewUrl: VOICE_PREVIEW_MAP.Wise_Woman, gender: "female", category: "educational" },
-  { id: "Friendly_Person", name: "Friendly Person", personality: "Warm, approachable voice - great for welcoming introductions", previewUrl: VOICE_PREVIEW_MAP.Friendly_Person, category: "marketing" },
-  { id: "Inspirational_girl", name: "Inspirational Girl", personality: "Motivational, uplifting female voice - ideal for inspiration", previewUrl: VOICE_PREVIEW_MAP.Inspirational_girl, gender: "female", category: "motivational" },
-  { id: "Deep_Voice_Man", name: "Deep Voice Man", personality: "Powerful, commanding male voice - excellent for serious topics", previewUrl: VOICE_PREVIEW_MAP.Deep_Voice_Man, gender: "male", category: "professional" },
-  { id: "Calm_Woman", name: "Calm Woman", personality: "Soothing, composed female voice - perfect for meditation or sensitive topics", previewUrl: VOICE_PREVIEW_MAP.Calm_Woman, gender: "female", category: "calming" },
-  { id: "Casual_Guy", name: "Casual Guy", personality: "Relaxed, conversational male voice - great for vlogs and tutorials", previewUrl: VOICE_PREVIEW_MAP.Casual_Guy, gender: "male", category: "marketing" },
-  { id: "Lively_Girl", name: "Lively Girl", personality: "Energetic, enthusiastic female voice - ideal for exciting announcements", previewUrl: VOICE_PREVIEW_MAP.Lively_Girl, gender: "female", category: "marketing" },
-  { id: "Patient_Man", name: "Patient Man", personality: "Gentle, understanding male voice - perfect for explanations", previewUrl: VOICE_PREVIEW_MAP.Patient_Man, gender: "male", category: "educational" },
-  { id: "Young_Knight", name: "Young Knight", personality: "Brave, confident male voice - great for adventure and gaming", previewUrl: VOICE_PREVIEW_MAP.Young_Knight, gender: "male", category: "creative" },
-  { id: "Determined_Man", name: "Determined Man", personality: "Strong, resolute male voice - excellent for motivational speeches", previewUrl: VOICE_PREVIEW_MAP.Determined_Man, gender: "male", category: "motivational" },
-  { id: "Lovely_Girl", name: "Lovely Girl", personality: "Sweet, charming female voice - ideal for storytelling", previewUrl: VOICE_PREVIEW_MAP.Lovely_Girl, gender: "female", category: "creative" },
-  { id: "Decent_Boy", name: "Decent Boy", personality: "Honest, sincere male voice - perfect for testimonials", previewUrl: VOICE_PREVIEW_MAP.Decent_Boy, gender: "male", category: "marketing" },
-  { id: "Imposing_Manner", name: "Imposing Manner", personality: "Formal, dignified male voice - great for corporate content", previewUrl: VOICE_PREVIEW_MAP.Imposing_Manner, gender: "male", category: "professional" },
-  { id: "Elegant_Man", name: "Elegant Man", personality: "Refined, sophisticated male voice - ideal for luxury content", previewUrl: VOICE_PREVIEW_MAP.Elegant_Man, gender: "male", category: "professional" },
-  { id: "Abbess", name: "Abbess", personality: "Spiritual, serene female voice - perfect for meditation", previewUrl: VOICE_PREVIEW_MAP.Abbess, gender: "female", category: "calming" },
-  { id: "Sweet_Girl_2", name: "Sweet Girl 2", personality: "Gentle, melodic female voice - excellent for children's content", previewUrl: VOICE_PREVIEW_MAP.Sweet_Girl_2, gender: "female", category: "creative" },
-  { id: "Exuberant_Girl", name: "Exuberant Girl", personality: "Joyful, expressive female voice - ideal for celebrations", previewUrl: VOICE_PREVIEW_MAP.Exuberant_Girl, gender: "female", category: "creative" },
-];
 
 export const VOICE_CLONE_ID = "MY_VOICE_CLONE";
 
@@ -147,7 +80,6 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
 }) => {
   const [voiceClone, setVoiceClone] = useState<VoiceCloneResponse | null>(null);
   const [loadingVoiceClone, setLoadingVoiceClone] = useState(false);
-  const [playingPreview, setPlayingPreview] = useState<string | null>(null);
   const [showVoiceClonePanel, setShowVoiceClonePanel] = useState(false);
   const [voiceCreated, setVoiceCreated] = useState(false);
   const [redoingClone, setRedoingClone] = useState(false);
@@ -157,12 +89,23 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
   const [localAudioSettings, setLocalAudioSettings] = useState<VoiceAudioSettings>(
     externalAudioSettings || { ...DEFAULT_AUDIO_SETTINGS }
   );
-  const [genderFilter, setGenderFilter] = useState<GenderFilter>("all");
+  const [genderFilter, setGenderFilter] = useState<VoiceSelectorGenderFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const prevVoiceCloneIdRef = useRef<string | null>(null);
 
-  const fetchVoiceClone = async () => {
+  const { playingPreview, handlePreview, stopCurrentAudio } = useVoicePreview();
+
+  const isPreviewing = playingPreview !== null;
+
+  const { voiceOptions, filteredVoices } = useVoiceFiltering({
+    showVoiceClone,
+    voiceClone,
+    value,
+    genderFilter,
+    categoryFilter,
+  });
+
+  const fetchVoiceClone = useCallback(async () => {
     try {
       setLoadingVoiceClone(true);
       const result = await getLatestVoiceClone();
@@ -174,36 +117,7 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
     } finally {
       setLoadingVoiceClone(false);
     }
-  };
-
-  const voiceOptions = useMemo(() => {
-    const options: VoiceOption[] = [...PREDEFINED_VOICES];
-    
-    if (showVoiceClone && voiceClone?.success && voiceClone.custom_voice_id) {
-      options.unshift({
-        id: VOICE_CLONE_ID,
-        name: voiceClone.voice_name || voiceClone.custom_voice_id || "My Voice Clone",
-        personality: "Your own voice - cloned from audio sample",
-        isCustom: true,
-        previewUrl: voiceClone.preview_audio_url,
-      });
-    }
-    
-    return options;
-  }, [showVoiceClone, voiceClone]);
-
-  const filteredVoices = useMemo(() => {
-    const filtered = PREDEFINED_VOICES.filter(v => {
-      if (genderFilter !== "all" && v.gender !== genderFilter) return false;
-      if (categoryFilter !== "all" && v.category !== categoryFilter) return false;
-      return true;
-    });
-    if (value && value !== VOICE_CLONE_ID && !filtered.some(v => v.id === value)) {
-      const selected = PREDEFINED_VOICES.find(v => v.id === value);
-      if (selected) filtered.unshift(selected);
-    }
-    return filtered;
-  }, [genderFilter, categoryFilter, value]);
+  }, []);
 
   useEffect(() => {
     if (!showVoiceClone) return;
@@ -221,80 +135,6 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
       }
     }
   }, [voiceClone]);
-
-  const stopCurrentAudio = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      audioRef.current.onended = null;
-      audioRef.current.onerror = null;
-      audioRef.current = null;
-    }
-  }, []);
-
-  const handlePreview = useCallback(async (voice: VoiceOption) => {
-    if (!voice.previewUrl) return;
-
-    if (playingPreview === voice.id) {
-      stopCurrentAudio();
-      setPlayingPreview(null);
-      return;
-    }
-
-    stopCurrentAudio();
-    setPlayingPreview(voice.id);
-
-    // Append auth token for endpoints that require it (e.g. /api/assets/)
-    let previewUrl = voice.previewUrl;
-    // Convert relative URLs to absolute (pointing to backend, not Vercel)
-    if (previewUrl.startsWith('/')) {
-      previewUrl = `${getApiUrl()}${previewUrl}`;
-    }
-    try {
-      const tokenGetter = getAuthTokenGetter();
-      if (tokenGetter) {
-        const token = await tokenGetter();
-        if (token && previewUrl.includes('/api/')) {
-          const separator = previewUrl.includes('?') ? '&' : '?';
-          previewUrl = `${previewUrl}${separator}token=${encodeURIComponent(token)}`;
-        }
-      }
-    } catch (e) {
-      // Token retrieval failed — try URL without token
-    }
-
-    const audio = new Audio(previewUrl);
-    audioRef.current = audio;
-
-    audio.onerror = () => {
-      console.error("Failed to load voice preview audio:", voice.previewUrl);
-      if (audioRef.current === audio) {
-        audioRef.current = null;
-      }
-      setPlayingPreview(null);
-    };
-
-    audio.onended = () => {
-      if (audioRef.current === audio) {
-        audioRef.current = null;
-      }
-      setPlayingPreview(null);
-    };
-
-    audio.play().catch((err) => {
-      console.error("Failed to play voice preview:", err);
-      if (audioRef.current === audio) {
-        audioRef.current = null;
-      }
-      setPlayingPreview(null);
-    });
-  }, [playingPreview, stopCurrentAudio]);
-
-  useEffect(() => {
-    return () => {
-      stopCurrentAudio();
-    };
-  }, [stopCurrentAudio]);
 
   const handleChange = (newValue: string) => {
     if (newValue === VOICE_CLONE_ID && voiceClone?.success) {
@@ -357,8 +197,6 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
       setRedoingClone(false);
     }
   }, [showVoiceClonePanel]);
-
-  const isPreviewing = playingPreview !== null;
 
   useEffect(() => {
     if (externalAudioSettings) {
@@ -738,7 +576,7 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
                   key={val}
                   label={label}
                   size="small"
-                  onClick={() => setGenderFilter(val as GenderFilter)}
+                  onClick={() => setGenderFilter(val as VoiceSelectorGenderFilter)}
                   variant={genderFilter === val ? "filled" : "outlined"}
                   sx={{
                     height: 22,
@@ -987,110 +825,15 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
       )}
 
       {(showVoiceClone && !voiceClone?.success) || redoingClone ? (
-        <Box sx={{ mt: 2 }}>
-          <Button
-            onClick={handleTogglePanel}
-            startIcon={showVoiceClonePanel ? <ExpandLess /> : redoingClone ? <RestartAlt /> : <AutoAwesome />}
-            endIcon={showVoiceClonePanel ? <ExpandLess /> : <ExpandMore />}
-            sx={{
-              py: 2,
-              px: 3,
-              width: "100%",
-              background: showVoiceClonePanel 
-                ? "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
-                : "linear-gradient(135deg, #8B5CF6 0%, #EC4899 50%, #F59E0B 100%)",
-              border: showVoiceClonePanel 
-                ? "1px solid rgba(102, 126, 234, 0.5)"
-                : "none",
-              borderRadius: 2.5,
-              color: "#fff",
-              fontWeight: 700,
-              textTransform: "none",
-              fontSize: "0.95rem",
-              boxShadow: showVoiceClonePanel 
-                ? "0 4px 15px rgba(102, 126, 234, 0.35)"
-                : "0 4px 20px rgba(139, 92, 246, 0.4), 0 0 30px rgba(236, 72, 153, 0.2)",
-              "&:hover": {
-                background: "linear-gradient(135deg, #7C3AED 0%, #9333EA 50%, #D97706 100%)",
-                boxShadow: "0 6px 25px rgba(139, 92, 246, 0.5)",
-                transform: "translateY(-1px)",
-              },
-              transition: "all 0.3s ease",
-            }}
-          >
-            {redoingClone ? "Redo Voice Clone" : showVoiceClonePanel ? "Hide Voice Cloning" : "Create Your Voice Clone ✨"}
-          </Button>
-
-          <Collapse in={showVoiceClonePanel}>
-            <Box
-              sx={{
-                mt: 2,
-                p: 2,
-                borderRadius: 2,
-                background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
-                border: "1px solid rgba(102, 126, 234, 0.2)",
-                boxShadow: "inset 0 1px 3px rgba(0,0,0,0.05)",
-              }}
-            >
-              <VoiceAvatarPlaceholder
-                domainName="Podcast"
-                onVoiceSet={handleVoiceSet}
-              />
-
-              {voiceCreated && (
-                <Box
-                  sx={{
-                    mt: 2,
-                    p: 2,
-                    borderRadius: 2,
-                    background: "linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.1) 100%)",
-                    border: "1px solid rgba(16, 185, 129, 0.3)",
-                  }}
-                >
-                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-                    <CheckCircle sx={{ color: "#10b981", fontSize: "1.25rem" }} />
-                    <Typography variant="subtitle2" sx={{ color: "#10b981", fontWeight: 700 }}>
-                      {redoingClone ? "Voice Clone Updated!" : "Voice Clone Created Successfully!"}
-                    </Typography>
-                  </Stack>
-
-                  <Typography variant="body2" sx={{ color: "#475569", mb: 1.5, fontSize: "0.875rem" }}>
-                    {redoingClone ? "Your voice clone has been updated and will be used for your podcast." : "Your custom voice clone is ready and will be used for your podcast."}
-                  </Typography>
-
-                  <Stack direction="row" spacing={1.5} justifyContent="flex-end">
-                    <Button
-                      onClick={handleCancelRedo}
-                      sx={{
-                        color: "#64748b",
-                        "&:hover": { color: "#1e293b", background: "rgba(0,0,0,0.04)" },
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      variant="contained"
-                      onClick={handleDoneWithVoice}
-                      sx={{
-                        background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                        color: "#fff",
-                        fontWeight: 600,
-                        textTransform: "none",
-                        px: 3,
-                        boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)",
-                        "&:hover": {
-                          background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
-                        },
-                      }}
-                    >
-                      Done
-                    </Button>
-                  </Stack>
-                </Box>
-              )}
-            </Box>
-          </Collapse>
-        </Box>
+        <VoiceClonePanel
+          showVoiceClonePanel={showVoiceClonePanel}
+          voiceCreated={voiceCreated}
+          redoingClone={redoingClone}
+          onTogglePanel={handleTogglePanel}
+          onVoiceSet={handleVoiceSet}
+          onCancelRedo={handleCancelRedo}
+          onDoneWithVoice={handleDoneWithVoice}
+        />
       ) : null}
 
       {/* Voice Fine-tune Modal */}

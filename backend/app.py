@@ -52,7 +52,7 @@ def is_podcast_only_demo_mode() -> bool:
     env_val = os.getenv("ALWRITY_ENABLED_FEATURES", "all")
     enabled = get_enabled_features()
     result = "podcast" in enabled and "all" not in enabled
-    print(f"[DEBUG] is_podcast_only_demo_mode: ALWRITY_ENABLED_FEATURES={env_val}, enabled={enabled}, result={result}", flush=True)
+    # Removed debug print - too verbose during startup
     return result
 
 
@@ -711,6 +711,9 @@ async def startup_event():
     
     try:
         _log_memory_usage()
+        
+        # Note: Pricing is initialized per-user in services/database.py:init_user_database()
+        # which runs on first database access for each user. No global seeding needed at startup.
         
         # Skip startup health checks in podcast-only mode to avoid unnecessary DB errors
         if not is_podcast_only_demo_mode():
